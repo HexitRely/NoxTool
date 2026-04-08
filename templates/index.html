@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NoxTools | NOX</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=2">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <img id="my-logo" src="/static/logo.png" alt="Logo">
+                    <h1>NoxTools</h1>
+                </div>
+            </div>
+            <nav class="nav-menu" id="sidebar-nav">
+                <!-- Dynamically rendered by app.js based on module state -->
+                <button class="nav-btn active" data-view="dashboard" data-module="core" id="nav-dashboard">🏠 Dashboard</button>
+                <button class="nav-btn" data-view="pos" data-module="pos" id="nav-pos">🛒 Punkt Sprzedaży</button>
+                <button class="nav-btn" data-view="invoices" data-module="pos" id="nav-invoices">📅 Historia</button>
+                <button class="nav-btn" data-view="calendar" data-module="core" id="nav-calendar">📅 Mój Kalendarz</button>
+                <button class="nav-btn" data-view="projects" data-module="studio" id="nav-projects">📁 Zadania i Projekty</button>
+                <button class="nav-btn" data-view="products" data-module="pos" id="nav-products">🎹 Katalog</button>
+                <button class="nav-btn" data-view="clients" data-module="crm" id="nav-clients">👥 Klienci</button>
+                <button class="nav-btn" data-view="finance" data-module="finance" id="nav-finance">💳 Finanse</button>
+                <div class="nav-divider"></div>
+                <button class="nav-btn" data-view="settings" data-module="core" id="nav-settings">⚙️ Ustawienia</button>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="sidebar-limit-info">
+                    <p>Mój Limit:</p>
+                    <span id="sidebar-limit">0.00 PLN</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="content">
+            <!-- First Login Notice -->
+            <div id="first-login-notice" class="card" style="display: none; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger-color); margin-bottom: 20px;">
+                <h3 style="color: var(--danger-color); margin-top: 0;">⚠️ Wymagana aktualizacja danych</h3>
+                <p>To jest Twoje pierwsze logowanie lub administrator zresetował Twoje hasło. <br>
+                Aby móc korzystać z systemu, musisz <strong>zmienić hasło</strong> oraz uzupełnić swoje <strong>Imię i Nazwisko</strong> w zakładce Ustawienia -> Mój Profil.</p>
+            </div>
+            
+            <!-- Modal: Project Confirmation -->
+    <div id="modal-confirmation" class="modal">
+        <div class="modal-content">
+            <h3>📜 Generuj Potwierdzenie Projektu</h3>
+            <form id="form-confirmation">
+                <input type="hidden" id="conf-invoice-id">
+                <div class="form-group">
+                    <label>Tytuł Projektu</label>
+                    <input type="text" id="conf-title" required placeholder="np. Mix/Mastering Singla - Nazwa Artysty">
+                </div>
+                <div class="form-group">
+                    <label>Termin Realizacji</label>
+                    <input type="text" id="conf-deadline" required placeholder="np. 2026-05-15">
+                </div>
+                <div class="form-group">
+                    <label>Zakres Prac</label>
+                    <textarea id="conf-scope" rows="4" placeholder="Opisz co wchodzi w skład projektu..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-confirmation').style.display='none'">Anuluj</button>
+                    <button type="submit" class="btn btn-primary">Generuj i Wyślij PDF</button>
+                </div>
+            </form>
+        </div>
+    </div>
+            
+            <!-- Header -->
+            <header class="top-bar">
+                <h2 id="view-title">Dashboard</h2>
+                <div class="user-meta" style="gap: 15px;">
+                    <!-- Visible only to ADMIN -->
+                    <select id="studio-selector" style="display: none; padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); color: var(--text-primary); outline: none;">
+                    </select>
+
+                    <div style="display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.05); padding: 4px 12px 4px 6px; border-radius: 20px;">
+                        <div class="auth-badge" id="auth-role-badge">PR</div>
+                        <span id="current-user-header" style="font-weight: 500; font-size: 0.9rem;">user</span>
+                    </div>
+
+                    <button id="btn-theme-toggle" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; background: rgba(255,255,255,0.05);">🌓 Motyw</button>
+                    <button id="btn-logout" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-color: rgba(239, 68, 68, 0.4); color: #fca5a5;">Wyloguj</button>
+                    <div class="status-dot"></div>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <section id="view-dashboard" class="view">
+                <div class="stats-grid">
+                    <div class="card stat-card highlight">
+                        <h3 id="limit-type-title">Monitor Limitów</h3>
+                        <div class="stat-value" id="monthly-total">0.00 PLN</div>
+                        <div class="progress-container">
+                            <div class="progress-bar" id="income-progress"></div>
+                        </div>
+                        <p id="remaining-limit">Zostało: 3225.00 PLN</p>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>Wystawione Dokumenty</h3>
+                        <div class="stat-value" id="invoice-count">0</div>
+                        <p id="dashboard-period-info">W bieżącym okresie</p>
+                    </div>
+                    <div class="card stat-card warning" id="ndg-warning" style="display: none;">
+                        <h3>⚠️ NDG Shield Alert</h3>
+                        <p>Zbliżasz się do limitu działalności nierejestrowanej!</p>
+                    </div>
+                </div>
+
+                <div class="card table-card">
+                    <div class="header-with-action">
+                        <h3>Ostatnie Dokumenty</h3>
+                        <button class="btn btn-primary" onclick="window.app.showView('pos')">🛒 Otwórz POS</button>
+                    </div>
+                    <table id="recent-invoices-table">
+                        <thead>
+                            <tr>
+                                <th>Numer</th>
+                                <th>Klient</th>
+                                <th>Data</th>
+                                <th>Kwota</th>
+                                <th>Status</th>
+                                <th>Akcja</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- POS View (Simplified Unified Client) -->
+            <section id="view-pos" class="view" style="display: none;">
+                <div class="pos-view-container" style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px;">
+                    <!-- Column 1: Products & Items -->
+                    <div class="column-left">
+                        <div class="card" style="height: 100%; display: flex; flex-direction: column;">
+                            <div class="doc-type-selector" style="margin-bottom: 15px;">
+                                <button type="button" class="type-btn faktura active" data-type="FAKTURA">Faktura</button>
+                                <button type="button" class="type-btn paragon" data-type="PARAGON">Paragon</button>
+                                <button type="button" class="type-btn wycena" data-type="WYCENA">Wycena</button>
+                                <button type="button" class="type-btn wz" data-type="WZ">WZ</button>
+                            </div>
+
+                            <div class="tabs-container" id="pos-product-tabs">
+                                <!-- Dynamic Categories -->
+                            </div>
+                            <div class="product-tiles-grid" id="pos-tiles-grid" style="flex: 1; min-height: 300px;"></div>
+
+                            <div class="card" style="padding: 15px; margin-top: 15px; background: rgba(0,0,0,0.15);">
+                                <h4 style="margin-bottom: 10px; font-size: 0.75rem; text-transform: uppercase;">Pozycje na dokumencie</h4>
+                                <div id="pos-items-list" style="max-height: 150px; overflow-y: auto;"></div>
+                                <div class="total-display" style="margin-top: 10px; font-size: 1.5rem;">Razem: <span id="pos-total">0.00</span> PLN</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Column 2: Client & Document Options -->
+                    <div class="column-right">
+                        <div class="card" style="height: 100%;">
+                            <h3>Dane Odbiorcy</h3>
+                            <div class="form-group">
+                                <label>Nazwa Firmy / Klienta (wpisz lub wybierz z bazy)</label>
+                                <input type="text" id="pos-client-name" placeholder="Szukaj lub wpisz nową..." list="pos-client-datalist">
+                                <datalist id="pos-client-datalist"></datalist>
+                            </div>
+                            <div class="form-group">
+                                <label>Identyfikator (NIP / PESEL)</label>
+                                <div class="client-form-toggle" style="margin-bottom: 8px;">
+                                    <button type="button" class="toggle-btn active" id="pos-id-type-nip" onclick="window.app.toggleIdType('NIP')">NIP</button>
+                                    <button type="button" class="toggle-btn" id="pos-id-type-pesel" onclick="window.app.toggleIdType('PESEL')">PESEL</button>
+                                </div>
+                                <div class="input-group">
+                                    <input type="text" id="pos-client-nip" placeholder="Wpisz identyfikator...">
+                                    <button type="button" class="btn btn-secondary btn-icon" id="btn-lookup-nip" title="Pobierz z bazy (GUS/MF)">🔍 Pobierz z GUS</button>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Adres</label>
+                                <input type="text" id="pos-client-address" placeholder="Ulica, Miasto...">
+                            </div>
+
+                            <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border-color);">
+
+                            <div class="form-group">
+                                <label>Numer Umowy / Referencja</label>
+                                <input type="text" id="pos-contract-num" placeholder="Opcjonalnie">
+                            </div>
+                            <div class="form-group">
+                                <label>Krótki opis projektu (publiczny)</label>
+                                <input type="text" id="pos-description" placeholder="Publiczny opis na dokumencie">
+                            </div>
+
+                            <div id="pos-payment-section">
+                                <label style="font-size: 0.8rem; color: var(--text-secondary);">Metoda płatności</label>
+                                <div class="payment-grid">
+                                    <button type="button" class="payment-btn active" data-method="PRZELEW">Przelew</button>
+                                    <button type="button" class="payment-btn" data-method="KARTA">Karta</button>
+                                    <button type="button" class="payment-btn" data-method="GOTÓWKA">Gotówka</button>
+                                </div>
+                            </div>
+
+                            <div class="options-section">
+                                <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                                    <input type="checkbox" id="pos-rights-clause" checked style="width: auto;">
+                                    <label style="font-size: 0.75rem;">Autorskie prawa majątkowe</label>
+                                </div>
+                                <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                                    <input type="checkbox" id="pos-qr-code" checked style="width: auto;">
+                                    <label style="font-size: 0.75rem;">Kod QR dla przelewu</label>
+                                </div>
+                                <div class="form-group" style="display: flex; align-items: center; gap: 8px; margin-bottom: 15px; background: rgba(99, 102, 241, 0.1); padding: 8px; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.2);">
+                                    <input type="checkbox" id="pos-worker-invoice" style="width: auto;">
+                                    <label style="font-size: 0.75rem; color: var(--accent-color); font-weight: 700;">Faktura na pracownika (TYLKO JA JESTEM SPRZEDAWCĄ)</label>
+                                </div>
+                            </div>
+
+                            <button id="btn-pos-generate" class="btn btn-success btn-large" style="width: 100%; height: 50px; font-weight: 800;">WYSTAW I WYŚLIJ DOKUMENT</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Invoices View -->
+            <section id="view-invoices" class="view" style="display: none;">
+                <div class="view-header">
+                    <div class="filters">
+                        <select id="sort-invoice">
+                            <option value="date_desc">Od najnowszych</option>
+                            <option value="date_asc">Od najstarszych</option>
+                            <option value="amount_desc">Od najwyższej kwoty</option>
+                        </select>
+                        <select id="filter-invoice-client">
+                            <option value="">Wszyscy Klienci</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="card table-card">
+                    <table id="all-invoices-table">
+                        <thead>
+                            <tr>
+                                <th>Numer</th>
+                                <th>Klient</th>
+                                <th>Data</th>
+                                <th>Kwota</th>
+                                <th>Status</th>
+                                <th>Akcja</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Products View -->
+            <section id="view-products" class="view" style="display: none;">
+                <div class="view-header">
+                    <button class="btn btn-primary" id="btn-add-product-modal">+ Nowy Produkt</button>
+                </div>
+                <div class="card table-card">
+                    <table id="products-table">
+                        <thead>
+                            <tr>
+                                <th>Sort</th>
+                                <th>Kategoria</th>
+                                <th>Nazwa</th>
+                                <th>Cena PLN</th>
+                                <th>Akcje</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Clients View -->
+            <section id="view-clients" class="view" style="display: none;">
+                <div class="grid-2-1">
+                    <div class="card">
+                        <h3>Baza Klientów</h3>
+                        <table id="clients-table">
+                            <thead>
+                                <tr>
+                                    <th>Nazwa</th>
+                                    <th>NIP</th>
+                                    <th>Akcja</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="card">
+                        <h3>Dodaj Nowego Klienta</h3>
+                        <form id="form-add-client">
+                            <div class="form-group">
+                                <label>Nazwa (Firmy/Imię Nazwisko)</label>
+                                <input type="text" name="name" required>
+                            </div>
+                            <div class="form-group">
+                                <label>NIP</label>
+                                <input type="text" name="nip">
+                            </div>
+                            <div class="form-group">
+                                <label>Adres</label>
+                                <input type="text" name="address">
+                            </div>
+                            <div class="form-group">
+                                <label>Email</label>
+                                <input type="email" name="email">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Zapisz Klienta</button>
+                        </form>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Finance & Costs View -->
+            <section id="view-finance" class="view" style="display: none;">
+                <div class="stats-grid">
+                    <div class="card stat-card highlight">
+                        <h3>Suma Wydatków</h3>
+                        <div class="stat-value" id="total-costs-sum">0.00 PLN</div>
+                        <p id="costs-period">Wszystkie zarejestrowane</p>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>W tym miesiącu</h3>
+                        <div class="stat-value" id="monthly-costs-sum">0.00 PLN</div>
+                    </div>
+                    <div class="card stat-card">
+                        <h3>Top Kategoria</h3>
+                        <div class="stat-value" id="top-cost-category" style="font-size: 1.2rem;">-</div>
+                    </div>
+                </div>
+
+                <div class="view-header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="filters" style="display: flex; gap: 10px;">
+                        <input type="text" id="filter-cost-title" placeholder="Szukaj po tytule...">
+                        <select id="filter-cost-category">
+                            <option value="">Wszystkie Kategorie</option>
+                        </select>
+                        <input type="date" id="filter-cost-date">
+                    </div>
+                    <button class="btn btn-success" id="btn-add-expense-modal">+ Dodaj Koszt</button>
+                </div>
+
+                <div class="card table-card">
+                    <table id="expenses-table">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Tytuł</th>
+                                <th>Kategoria</th>
+                                <th>Projekt</th>
+                                <th>Kwota</th>
+                                <th>Akcja</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- Settings View -->
+            <section id="view-settings" class="view" style="display: none;">
+                <div class="tabs-container" id="settings-tabs" style="margin-bottom: 25px;">
+                    <button class="tab-btn admin-only active" data-tab="company">🏢 Firma</button>
+                    <button class="tab-btn" data-tab="user-profile">👤 Mój Profil</button>
+                    <button class="tab-btn" data-tab="integrations">🔐 Bezpieczeństwo & Webhooki</button>
+                    <button class="tab-btn admin-only" data-tab="admin-rbac">🛡️ Administracja</button>
+                </div>
+
+                <!-- Tab: Company (System Admin only) -->
+                <div id="tab-settings-company" class="settings-tab-content card admin-only" style="max-width: 700px;">
+                    <h3>Ustawienia Firmowe (Globalne)</h3>
+                    <form id="form-settings">
+                        <div class="form-group">
+                            <label>Nazwa Firmy / Imię i Nazwisko</label>
+                            <input type="text" name="MY_NAME" id="set-name">
+                        </div>
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>NIP</label>
+                                <input type="text" name="MY_NIP" id="set-nip">
+                            </div>
+                            <div class="form-group">
+                                <label>Miasto</label>
+                                <input type="text" name="MY_CITY" id="set-city">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Adres</label>
+                            <input type="text" name="MY_ADDRESS" id="set-address">
+                        </div>
+                        <div class="form-group">
+                            <label>Numer Konta Bankowego</label>
+                            <input type="text" name="MY_ACCOUNT" id="set-account">
+                        </div>
+                        
+                        <h4 style="margin: 20px 0 10px 0; border-top: 1px solid var(--border-color); padding-top: 15px;">NDG Shield - Monitor Limitów</h4>
+                        <div class="limit-type-selector">
+                            <input type="radio" name="LIMIT_TYPE" id="limit-m" value="MONTHLY" class="limit-radio">
+                            <label for="limit-m" class="limit-label">Miesięczny</label>
+                            
+                            <input type="radio" name="LIMIT_TYPE" id="limit-q" value="QUARTERLY" class="limit-radio">
+                            <label for="limit-q" class="limit-label">Kwartalny</label>
+                            
+                            <input type="radio" name="LIMIT_TYPE" id="limit-no" value="DISABLED" class="limit-radio">
+                            <label for="limit-no" class="limit-label">Wyłączony</label>
+                        </div>
+                        <div class="form-group" id="limit-val-group">
+                            <label>Wartość limitu (PLN)</label>
+                            <input type="number" step="0.01" name="LIMIT_VALUE" id="set-limit-val">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="margin-top: 10px; width: 100%;">Zapisz Wszystkie Ustawienia Firmy</button>
+                    </form>
+                </div>
+
+                <!-- Tab: User Profile -->
+                <div id="tab-settings-user-profile" class="settings-tab-content card" style="display: none; max-width: 700px;">
+                    <h3>Moje Dane (Profil Pracownika)</h3>
+                    <form id="form-user-profile">
+                        <div class="grid-2">
+                            <div class="form-group">
+                                <label>Mój Login (Nazwa użytkownika)</label>
+                                <input type="text" id="profile-username" placeholder="Login" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Imię i Nazwisko</label>
+                                <input type="text" id="profile-full-name" placeholder="Np. Jan Kowalski" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Moja Identyfikacja Podatkowa</label>
+                            <div class="client-form-toggle" style="margin-bottom: 10px;">
+                                <button type="button" class="toggle-btn active" id="profile-id-type-nip" onclick="window.app.toggleProfileIdType('NIP')">NIP</button>
+                                <button type="button" class="toggle-btn" id="profile-id-type-pesel" onclick="window.app.toggleProfileIdType('PESEL')">PESEL</button>
+                            </div>
+                        </div>
+                        <div class="grid-2">
+                            <div id="group-profile-nip" class="form-group">
+                                <label>Mój NIP</label>
+                                <input type="text" id="profile-nip" placeholder="NIP">
+                            </div>
+                            <div id="group-profile-pesel" class="form-group" style="display: none;">
+                                <label>Mój PESEL</label>
+                                <input type="text" id="profile-pesel" placeholder="PESEL">
+                            </div>
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label>Mój Adres (do dokumentów)</label>
+                                <input type="text" id="profile-address" placeholder="Miasto, Ulica nr">
+                                <small>Np: Warszawa, ul. Muzyczna 12/4</small>
+                            </div>
+                             <div class="form-group">
+                                 <label>Email Kontaktowy</label>
+                                 <input type="email" id="profile-email">
+                             </div>
+                             <div class="form-group">
+                                 <label>Numer konta (do wypłat / faktur)</label>
+                                 <input type="text" id="profile-bank-account" placeholder="Numer konta bankowego">
+                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Nowe Hasło (zostaw puste, aby nie zmieniać)</label>
+                            <input type="password" id="profile-password" placeholder="••••••••">
+                        </div>
+                        <button type="submit" class="btn btn-success" style="width: 100%;">Zaktualizuj Mój Profil</button>
+                    </form>
+                </div>
+
+                <!-- Tab: Integrations & Security (Personal) -->
+                <div id="tab-settings-integrations" class="settings-tab-content" style="display: none;">
+                    <div class="grid-2">
+                        <div class="card">
+                            <h3>🔐 Szyfrowanie PDF</h3>
+                            <div class="form-group">
+                                <label class="checkbox-container">
+                                    <input type="checkbox" id="profile-pdf-encryption">
+                                    <span class="checkmark"></span>
+                                    Włącz hasło dla moich dokumentów (PDF)
+                                </label>
+                            </div>
+                            <div class="form-group" id="pdf-password-group" style="display: none;">
+                                <label>Moje Hasło do Dokumentów</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="text" id="profile-pdf-password" placeholder="Wpisz lub wygeneruj hasło">
+                                    <button type="button" class="btn btn-secondary" onclick="window.app.generatePdfPassword()" style="white-space: nowrap;">🔄 Generuj</button>
+                                </div>
+                                <small>Klienci będą musieli wpisać to hasło, aby otworzyć Twoje faktury/WZ.</small>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>🔌 Prywatne Webhooki Discord</h3>
+                            <form id="form-personal-webhooks">
+                                <div class="form-group">
+                                    <label>Discord Webhook (Mój Panel - Finanse)</label>
+                                    <input type="text" id="profile-webhook-admin" placeholder="https://discord.com/api/webhooks/...">
+                                    <small>Faktury, Paragony, Wyceny (zostaw puste dla globalnych)</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>Discord Webhook (Moja Ekipa - Realizacja)</label>
+                                    <input type="text" id="profile-webhook-ekipa" placeholder="https://discord.com/api/webhooks/...">
+                                    <small>Twoje dokumenty WZ (zostaw puste dla globalnych)</small>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <div class="card admin-only" style="margin-top: 20px;">
+                        <h3>🌍 Globalne Integracje (Tylko Admin)</h3>
+                        <div class="grid-2">
+                            <form id="form-webhooks">
+                                <div class="form-group">
+                                    <label>Domyślny Webhook Admin</label>
+                                    <input type="text" name="ADMIN_WEBHOOK" id="set-webhook-admin">
+                                </div>
+                                <div class="form-group">
+                                    <label>Domyślny Webhook Ekipa</label>
+                                    <input type="text" name="EKIPA_WEBHOOK" id="set-webhook-ekipa">
+                                </div>
+                            </form>
+                            <form id="form-finance-settings">
+                                <div class="form-group">
+                                    <label>Próg powiadomienia Discord (PLN)</label>
+                                    <input type="number" step="0.01" name="COST_THRESHOLD_LIMIT" id="set-cost-limit">
+                                </div>
+                                <div class="form-group">
+                                    <label>Kategorie Kosztów</label>
+                                    <textarea name="EXPENSE_CATEGORIES" id="set-cost-categories" rows="2"></textarea>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <button type="button" class="btn btn-primary" onclick="window.app.savePersonalConfigs()" style="width: 100%; margin-top: 20px; font-weight: bold;">💾 Zapisz Moje Ustawienia Bezpieczeństwa & Integracji</button>
+                </div>
+
+                <!-- Tab: Admin RBAC -->
+                <div id="tab-settings-admin-rbac" class="settings-tab-content" style="display: none;">
+                    <div class="card" id="settings-admin-panel">
+                        <h3 style="color: #ef4444; border-bottom: 1px solid rgba(239, 68, 68, 0.3); padding-bottom: 10px; margin-bottom: 20px;">🛡️ Panel Administratora & RBAC</h3>
+                        
+                        <div class="grid-2" style="align-items: start;">
+                            <!-- STUDIOS -->
+                            <div>
+                                <h4>Zarządzanie Studiami (Lokalizacjami)</h4>
+                                <form id="form-add-studio" style="margin-bottom: 20px;">
+                                    <div class="form-group">
+                                        <input type="text" id="add-studio-name" placeholder="Nazwa Studia" required>
+                                    </div>
+                                    <button type="submit" class="btn btn-secondary">Dodaj Studio</button>
+                                </form>
+                                <div class="table-responsive">
+                                    <table>
+                                        <thead><tr><th>Nazwa</th><th>Akcja</th></tr></thead>
+                                        <tbody id="admin-studios-list"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <!-- USERS -->
+                            <div>
+                                <h4>Zarządzanie Użytkownikami</h4>
+                                <form id="form-add-user" style="margin-bottom: 20px;">
+                                    <div class="grid-2">
+                                        <div class="form-group">
+                                            <input type="text" id="add-user-name" placeholder="Nazwa użytkownika" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <input type="password" id="add-user-pass" placeholder="Hasło" required>
+                                        </div>
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 15px;">
+                                        <input type="text" id="add-user-full-name" placeholder="Imię i Nazwisko (opcjonalnie)">
+                                    </div>
+                                    <div class="grid-2">
+                                        <div class="form-group">
+                                            <select id="add-user-role">
+                                                <option value="PRODUCER">Producer</option>
+                                                <option value="FREELANCER">Freelancer</option>
+                                                <option value="ADMIN">Admin</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <select id="add-user-studio">
+                                                <!-- Dynamicznych studia -->
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="options-section" style="margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-dashboard" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Dashboard</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-pos" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">POS</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-history" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Historia</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-catalogue" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Katalog</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-crm" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Klienci</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-finance" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Finanse</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-projects" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Podgląd Projektów</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-manage-projects" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Zarządzanie Projektami</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-manage-tasks" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Zarządzanie Taskami</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-settings" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Ustawienia</label>
+                                        </div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <input type="checkbox" id="add-user-create-docs" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0; color: var(--accent-color); font-weight: 700;">Wystawianie Dok.</label>
+                                        </div>
+                                    </div>
+                                    <button type="submit" class="btn btn-secondary">Dodaj Użytkownika</button>
+                                </form>
+                                <div class="table-responsive">
+                                    <table>
+                                        <thead><tr><th>User</th><th>Rola</th><th>Studio</th><th>Akcja</th></tr></thead>
+                                        <tbody id="admin-users-list"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h3 style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border-color);">🧩 Moduły Systemu</h3>
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 20px;">Włączaj i wyłączaj moduły aplikacji. Moduły oznaczone jako <strong>Core</strong> nie mogą zostać wyłączone.</p>
+                        <div id="modules-list" style="display: flex; flex-direction: column; gap: 12px;">
+                            <!-- Dynamically rendered by app.js -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+            <!-- Calendar View -->
+            <section id="view-calendar" class="view" style="display: none;">
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <button class="btn btn-secondary" id="cal-prev">◀</button>
+                            <h3 id="cal-month" style="margin: 0; min-width: 150px; text-align: center;">Miesiąc Rok</h3>
+                            <button class="btn btn-secondary" id="cal-next">▶</button>
+                        </div>
+                        <button class="btn btn-primary" onclick="window.app.openAddEventModal()">➕ Dodaj Wydarzenie</button>
+                    </div>
+                    <div id="calendar-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px;">
+                        <!-- JS generated calendar -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Projects View -->
+            <section id="view-projects" class="view" style="display: none;">
+                <div class="card table-card">
+                    <div class="header-with-action">
+                        <h3>Projekty i Zadania</h3>
+                        <button class="btn btn-primary" id="btn-new-project" onclick="window.app.openProjectForm()">➕ Nowy Projekt</button>
+                    </div>
+                    <div id="projects-list-container" style="display: flex; flex-direction: column; gap: 15px;"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    
+    <!-- Calendar Event Modal -->
+    <div id="modal-calendar-event" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <span class="close" onclick="document.getElementById('modal-calendar-event').style.display='none'">&times;</span>
+            <h2>Dodaj Wydarzenie</h2>
+            <form id="form-calendar-event">
+                <input type="hidden" id="cal-ev-id">
+                <div class="form-group">
+                    <label>Tytuł</label>
+                    <input type="text" id="cal-ev-title" placeholder="Np. Urlop, Nagranie..." required>
+                </div>
+                <div class="form-group">
+                    <label>Data</label>
+                    <input type="date" id="cal-ev-date" required>
+                </div>
+                <div class="form-group">
+                    <label>Typ Wydarzenia</label>
+                    <select id="cal-ev-type">
+                        <option value="WORK">💼 Praca / Nagranie</option>
+                        <option value="VACATION">🌴 Urlop / Przerwa</option>
+                        <option value="BUSY">🔴 Zajęty / Niedostępny</option>
+                        <option value="OTHER">⚪ Inne</option>
+                    </select>
+                </div>
+                <div class="form-group checkbox-group" style="margin: 15px 0;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="cal-ev-public"> Publiczne (widoczne dla całego zespołu)
+                    </label>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Zapisz</button>
+                    <button type="button" id="btn-delete-cal-ev" class="btn btn-danger" style="display: none;">Usuń</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Project Form Modal -->
+    <div id="modal-project-form" class="modal">
+        <div class="modal-content" style="width: 500px;">
+            <span class="close" onclick="document.getElementById('modal-project-form').style.display='none'">&times;</span>
+            <h2 id="project-form-title">Dodaj Projekt</h2>
+            <form id="form-project">
+                <input type="hidden" id="p-id">
+                <div class="form-group">
+                    <label>Typ (Klient)</label>
+                    <select id="p-client" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Tytuł Projektu</label>
+                    <input type="text" id="p-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Opis (Markdown)</label>
+                    <textarea id="p-desc" rows="4" style="width: 100%; border-radius: 8px; padding: 10px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: white; resize: vertical; font-family: monospace;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Przypisany Pracownik</label>
+                    <select id="p-assigned"></select>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Zapisz</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Task Form Modal -->
+    <div id="modal-task-form" class="modal">
+        <div class="modal-content" style="width: 700px; max-height: 90vh; overflow-y: auto;">
+            <span class="close" onclick="document.getElementById('modal-task-form').style.display='none'">&times;</span>
+            <h2 id="task-form-title">Nowe Zadanie</h2>
+            <form id="form-task">
+                <input type="hidden" id="t-id">
+                <input type="hidden" id="t-project-id">
+                <div class="form-group">
+                    <label>Tytuł zadania</label>
+                    <input type="text" id="t-title" required>
+                </div>
+                <div class="form-group">
+                    <label>Deadline (Data)</label>
+                    <input type="date" id="t-deadline">
+                </div>
+                <div class="form-group">
+                    <label>Opis w Markdown</label>
+                    <textarea id="t-desc" rows="5" style="width: 100%; padding: 10px; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid var(--border-color); color: white; resize: vertical; margin-bottom:10px; font-family: monospace;"></textarea>
+                    
+                    <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px;">
+                        <p style="margin-top: 0; font-size: 0.8rem; font-weight: bold; color: var(--accent-light);">Podgląd Markdown:</p>
+                        <div id="t-desc-preview" class="formatted-markdown" style="font-size: 0.9rem; min-height: 50px;"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Dodaj Linki (oddzielone spacją)</label>
+                    <input type="text" id="t-links" placeholder="https://dysk... https://youtube...">
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Przypisz Do</label>
+                        <select id="t-assigned"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="t-status">
+                            <option value="TODO">To Do</option>
+                            <option value="IN_PROGRESS">W trakcie</option>
+                            <option value="DONE">Zakończone</option>
+                        </select>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Zapisz Zadanie</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- User Edit Modal -->
+    <div id="modal-user-edit" class="modal">
+        <div class="modal-content" style="width: 400px;">
+            <span class="close" onclick="document.getElementById('modal-user-edit').style.display='none'">&times;</span>
+            <h2>Edytuj Użytkownika</h2>
+            <form id="form-edit-user">
+                <input type="hidden" id="edit-user-id">
+                <div class="form-group">
+                    <label>Imię i Nazwisko</label>
+                    <input type="text" id="edit-user-full-name" placeholder="Imię i Nazwisko">
+                </div>
+                <div class="form-group">
+                    <label>Rola</label>
+                    <select id="edit-user-role" required>
+                        <option value="PRODUCER">Producer</option>
+                        <option value="FREELANCER">Freelancer</option>
+                        <option value="ADMIN">Admin</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Studio (puste = Globalny Dostęp)</label>
+                    <select id="edit-user-studio">
+                        <!-- Wypełniane z JS -->
+                    </select>
+                </div>
+                <div class="options-section" style="margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.1); border-radius: 6px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-dashboard" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Dashboard</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-pos" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">POS</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-history" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Historia</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-catalogue" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Katalog</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-crm" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Klienci</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-finance" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Finanse</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-projects" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Podgląd Projektów</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-manage-projects" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Zarządzanie Projektami</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-manage-tasks" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Zarządzanie Taskami</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-settings" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0;">Ustawienia</label>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="edit-user-create-docs" style="width: auto;"> <label style="font-size: 0.8rem; margin: 0; color: var(--accent-color); font-weight: 700;">Wystawianie Dok.</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Nowe Hasło <small>(zostaw puste, aby nie zmieniać)</small></label>
+                    <input type="password" id="edit-user-pass" placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 10px;">Zapisz Zmiany</button>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Item Edit Modal (via POS) -->
+    <div id="modal-tile-add" class="modal">
+        <div class="modal-content" style="width: 350px;">
+            <h3 id="tile-add-name">Nazwa Produktu</h3>
+            <div class="form-group" style="margin-top:20px;">
+                <label>Cena PLN</label>
+                <input type="number" step="0.01" id="tile-add-price">
+            </div>
+            <div class="form-group">
+                <label>Ilość</label>
+                <input type="number" value="1" min="1" id="tile-add-qty">
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-tile-add').style.display='none'" style="flex: 1;">ANULUJ</button>
+                <button type="button" class="btn btn-primary" id="btn-tile-confirm" style="flex: 1;">DODAJ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Form Modal -->
+    <div id="modal-product" class="modal">
+        <div class="modal-content" style="width: 450px;">
+            <span class="close" onclick="document.getElementById('modal-product').style.display='none'">&times;</span>
+            <h2 id="product-modal-title">Dodaj Produkt</h2>
+            <form id="form-product-core">
+                <input type="hidden" id="m-product-id">
+                <div class="form-group">
+                    <label>Nazwa Produktu</label>
+                    <input type="text" id="m-product-name" required>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Cena Domyślna</label>
+                        <input type="number" step="0.01" id="m-product-price" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Kolejność (Sort)</label>
+                        <input type="number" id="m-product-sort" value="0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Kategoria (Wpisz nową lub wybierz)</label>
+                    <input type="text" id="m-product-category" list="category-list" required>
+                    <datalist id="category-list">
+                        <option value="Produkcja">
+                        <option value="Mix/Mastering">
+                        <option value="Inne">
+                    </datalist>
+                </div>
+                <button type="submit" class="btn btn-primary btn-large">Zapisz Produkt</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Client Details Modal -->
+    <div id="modal-client-details" class="modal">
+        <div class="modal-content" style="width: 800px;">
+            <span class="close" onclick="document.getElementById('modal-client-details').style.display='none'">&times;</span>
+            <h2 id="client-detail-name">Szczegóły Klienta</h2>
+            <div class="grid-2" style="margin-top: 20px;">
+                <div class="card stat-card">
+                    <h3>Suma Wydatków</h3>
+                    <div class="stat-value" id="client-total-spent">0.00 PLN</div>
+                </div>
+                <div class="card stat-card">
+                    <h3>Liczba Dokumentów</h3>
+                    <div class="stat-value" id="client-doc-count">0</div>
+                </div>
+            </div>
+            <div class="card table-card" style="margin-top: 20px;">
+                <table id="client-invoices-table">
+                    <thead>
+                        <tr>
+                            <th>Numer</th>
+                            <th>Data</th>
+                            <th>Kwota</th>
+                            <th>Status</th>
+                            <th>Akcja</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Client Edit Modal -->
+    <div id="modal-client-edit" class="modal">
+        <div class="modal-content" style="width: 450px;">
+            <span class="close" onclick="document.getElementById('modal-client-edit').style.display='none'">&times;</span>
+            <h2>Edytuj Klienta</h2>
+            <form id="form-edit-client">
+                <input type="hidden" id="e-client-id">
+                <div class="form-group">
+                    <label>Nazwa</label>
+                    <input type="text" id="e-client-name" required>
+                </div>
+                <div class="form-group">
+                    <label>NIP</label>
+                    <input type="text" id="e-client-nip">
+                </div>
+                <div class="form-group">
+                    <label>Adres</label>
+                    <input type="text" id="e-client-address">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="e-client-email">
+                </div>
+                <div class="form-group">
+                    <label>Telefon</label>
+                    <input type="text" id="e-client-phone">
+                </div>
+                <button type="submit" class="btn btn-primary btn-large">Zaktualizuj Klienta</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Expense Modal -->
+    <div id="modal-expense" class="modal">
+        <div class="modal-content" style="width: 500px;">
+            <span class="close" onclick="document.getElementById('modal-expense').style.display='none'">&times;</span>
+            <h2 id="expense-modal-title">Dodaj Wydatek / Dokument Kosztowy</h2>
+            <form id="form-add-expense" style="margin-top: 20px;">
+                <div class="form-group">
+                    <label>Tytuł Wydatku (np. Faktura za sprzęt)</label>
+                    <input type="text" id="exp-title" required>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Kwota (Brutto PLN)</label>
+                        <input type="number" step="0.01" id="exp-amount" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Data</label>
+                        <input type="date" id="exp-date" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Kategoria</label>
+                    <select id="exp-category" required></select>
+                </div>
+                <div class="form-group">
+                    <label>MusicProject (Opcjonalnie)</label>
+                    <select id="exp-project">
+                        <option value="">Wybierz projekt...</option>
+                    </select>
+                </div>
+                <div class="form-group" style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; border: 1px dashed var(--border-color);">
+                    <label>📁 Dokument (Faktura / Potwierdzenie)</label>
+                    <input type="file" id="exp-file" accept=".pdf,.png,.jpg,.jpeg" style="margin-top: 10px; border: none; background: transparent; padding: 0;">
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">PDF, JPG, PNG (Max 16MB)</small>
+                </div>
+                <button type="submit" class="btn btn-success btn-large" style="width: 100%;">ZAPISZ WYDATEK</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Document Preview Modal -->
+    <div id="modal-document-preview" class="modal">
+        <div class="modal-content" style="width: 90%; height: 90%; max-width: 1200px; padding: 10px; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px;">
+                <h3 id="preview-title">Podgląd Dokumentu</h3>
+                <span class="close" onclick="document.getElementById('modal-document-preview').style.display='none'" style="float: none;">&times;</span>
+            </div>
+            <div id="preview-container" style="flex: 1; min-height: 0; background: #333; border-radius: 8px; overflow: hidden;">
+                <!-- iFrame or Image generated here -->
+            </div>
+        </div>
+    </div>
+    <script src="/static/js/app.js?v=2"></script>
+</body>
+</html>

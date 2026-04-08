@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logowanie | NoxTools</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, var(--bg-primary), #0f172a);
+        }
+        .login-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+        .login-logo {
+            font-size: 2.5rem;
+            margin-bottom: 5px;
+        }
+        .login-card h2 {
+            margin-bottom: 30px;
+            color: var(--text-primary);
+        }
+        .form-group {
+            text-align: left;
+            margin-bottom: 20px;
+        }
+        .form-group input {
+            padding: 14px;
+            font-size: 1rem;
+        }
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            margin-top: 10px;
+            font-size: 1.1rem;
+            border-radius: 8px;
+        }
+        .error-msg {
+            color: #ef4444;
+            font-size: 0.9rem;
+            min-height: 20px;
+            margin-bottom: 15px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .error-msg.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-logo">
+            <img src="/static/logo.png" alt="Logo" style="max-height: 80px; margin-bottom: 20px; border-radius: 12px;">
+        </div>
+        <h2>NoxTools</h2>
+        <div class="error-msg" id="error-msg">Nieważny login lub hasło</div>
+        
+        <form id="login-form">
+            <div class="form-group">
+                <label>Login lub E-mail</label>
+                <input type="text" id="username" required autocomplete="username" placeholder="Podaj login lub e-mail">
+            </div>
+            <div class="form-group">
+                <label>Hasło</label>
+                <input type="password" id="password" required autocomplete="current-password" placeholder="••••••••">
+            </div>
+            <button type="submit" class="btn btn-primary login-btn" id="login-btn">Zaloguj się</button>
+        </form>
+    </div>
+
+    <script>
+        // Theme persistence on login page
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            const errorMsg = document.getElementById('error-msg');
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            btn.disabled = true;
+            btn.textContent = "Logowanie...";
+            errorMsg.classList.remove('show');
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    window.location.href = '/';
+                } else {
+                    errorMsg.textContent = data.error || "Wystąpił błąd logowania.";
+                    errorMsg.classList.add('show');
+                    btn.disabled = false;
+                    btn.textContent = "Zaloguj się";
+                }
+            } catch (err) {
+                errorMsg.textContent = "Błąd połączenia z serwerem.";
+                errorMsg.classList.add('show');
+                btn.disabled = false;
+                btn.textContent = "Zaloguj się";
+            }
+        });
+    </script>
+</body>
+</html>

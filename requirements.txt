@@ -1,0 +1,11 @@
+flask
+flask-sqlalchemy
+flask-cors
+flask-login
+python-dotenv
+reportlab
+qrcode[pil]
+Pillow
+requests
+psycopg2-binary
+pypdf
