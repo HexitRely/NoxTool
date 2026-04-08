@@ -93,7 +93,7 @@ def require_login_globally():
         is_allowed = any(request.path.startswith(p) for p in allowed_paths) or request.path == '/'
         if not is_allowed and request.path.startswith('/api/'):
             return jsonify({
-                'error': 'Wymagana zmiana hasĹ‚a i uzupeĹ‚nienie danych profilu', 
+                'error': 'Wymagana zmiana hasła i uzupełnienie danych profilu', 
                 'must_change_password': True
             }), 403
 
@@ -980,12 +980,18 @@ def handle_invoices_post():
     db.session.commit()
     
     # Integration: Send to Discord
-    global_admin = Config.query.filter_by(key='ADMIN_WEBHOOK').first().value
-    global_ekipa = Config.query.filter_by(key='EKIPA_WEBHOOK').first().value
+    admin_conf = Config.query.filter_by(key='ADMIN_WEBHOOK').first()
+    ekipa_conf = Config.query.filter_by(key='EKIPA_WEBHOOK').first()
+    
+    global_admin = admin_conf.value if admin_conf else None
+    global_ekipa = ekipa_conf.value if ekipa_conf else None
     
     webhooks = []
     if document_type in ['WZ', 'WYCENA']:
+        # Fallback to global admin if ekipa is not set
         if global_ekipa: webhooks.append(global_ekipa)
+        elif global_admin: webhooks.append(global_admin)
+        
         if current_user.discord_contractor_webhook: webhooks.append(current_user.discord_contractor_webhook)
     else:
         if global_admin: webhooks.append(global_admin)
@@ -1139,12 +1145,16 @@ def handle_single_invoice(id):
         db.session.commit()
         
         # Notify Discord
-        global_admin = Config.query.filter_by(key='ADMIN_WEBHOOK').first().value
-        global_ekipa = Config.query.filter_by(key='EKIPA_WEBHOOK').first().value
+        admin_conf = Config.query.filter_by(key='ADMIN_WEBHOOK').first()
+        ekipa_conf = Config.query.filter_by(key='EKIPA_WEBHOOK').first()
+        
+        global_admin = admin_conf.value if admin_conf else None
+        global_ekipa = ekipa_conf.value if ekipa_conf else None
         
         webhooks = []
         if document_type in ['WZ', 'WYCENA']:
             if global_ekipa: webhooks.append(global_ekipa)
+            elif global_admin: webhooks.append(global_admin)
             if current_user.discord_contractor_webhook: webhooks.append(current_user.discord_contractor_webhook)
         else:
             if global_admin: webhooks.append(global_admin)
@@ -1180,7 +1190,8 @@ def toggle_invoice_status(id):
     db.session.commit()
     
     # Notify Discord
-    global_admin = Config.query.filter_by(key='ADMIN_WEBHOOK').first().value
+    admin_conf = Config.query.filter_by(key='ADMIN_WEBHOOK').first()
+    global_admin = admin_conf.value if admin_conf else None
     
     webhooks = []
     if global_admin: webhooks.append(global_admin)
@@ -1188,7 +1199,7 @@ def toggle_invoice_status(id):
     
     for wh in set(webhooks):
         if wh:
-            send_payment_update_to_admin(wh, invoice.number, invoice.status)
+            send_payment_update_to_admin(wh, invoice.number, invoice.total_amount, invoice.status)
             
     return jsonify({"success": True, "status": invoice.status})
 

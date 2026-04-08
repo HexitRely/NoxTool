@@ -101,7 +101,9 @@ def send_invoice_deletion_to_admin(webhook_url, invoice_number, total):
             "footer": {"text": "NoxPos - Usunięcie"}
         }
         payload = {"payload_json": json.dumps({"embeds": [embed]})}
-        response = requests.post(webhook_url, data=payload)
+        response = requests.post(webhook_url, data=payload, timeout=10)
+        if response.status_code not in [200, 204]:
+            print(f"Discord Deletion Error: {response.status_code} - {response.text}")
         return response.status_code in [200, 204]
     except Exception as e:
         print(f"Error sending deletion alert: {str(e)}")
@@ -123,7 +125,9 @@ def send_payment_update_to_admin(webhook_url, invoice_number, total, status):
             "footer": {"text": "NoxPos - Płatności"}
         }
         payload = {"payload_json": json.dumps({"embeds": [embed]})}
-        response = requests.post(webhook_url, data=payload)
+        response = requests.post(webhook_url, data=payload, timeout=10)
+        if response.status_code not in [200, 204]:
+            print(f"Discord Payment Update Error: {response.status_code} - {response.text}")
         return response.status_code in [200, 204]
     except Exception as e:
         print(f"Error sending payment update: {str(e)}")
@@ -144,9 +148,11 @@ def _send_with_file(webhook_url, embed, file_path):
             }
             # Clean webhook URL just in case
             webhook_url = webhook_url.strip()
-            response = requests.post(webhook_url, data=payload, files=files)
+            response = requests.post(webhook_url, data=payload, files=files, timeout=15)
             if response.status_code not in [200, 204]:
-                print(f"Discord Webhook Error: {response.status_code} - {response.text}")
+                print(f"Discord Webhook Error ({os.path.basename(file_path)}): {response.status_code} - {response.text}")
+            else:
+                print(f"Discord Notification Sent Successfully: {os.path.basename(file_path)}")
             return response.status_code in [200, 204]
     except Exception as e:
         print(f"Error in _send_with_file: {str(e)}")

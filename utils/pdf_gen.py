@@ -42,9 +42,11 @@ def encrypt_pdf(file_path, password):
     with open(file_path, "wb") as f:
         writer.write(f)
 
-# Try to find a Polish-supporting font on Windows
+# Try to find a Polish-supporting font
 def get_font_path():
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     paths = [
+        os.path.join(root_dir, "static", "fonts", "Roboto-Regular.ttf"),
         "C:\\Windows\\Fonts\\arial.ttf",
         "C:\\Windows\\Fonts\\calibri.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" # Linux fallback
@@ -56,8 +58,12 @@ def get_font_path():
 
 FONT_PATH = get_font_path()
 if FONT_PATH:
-    pdfmetrics.registerFont(TTFont('PolishFont', FONT_PATH))
-    FONT_NAME = 'PolishFont'
+    try:
+        pdfmetrics.registerFont(TTFont('PolishFont', FONT_PATH))
+        FONT_NAME = 'PolishFont'
+    except Exception as e:
+        print(f"Error registering font {FONT_PATH}: {e}")
+        FONT_NAME = 'Helvetica'
 else:
     FONT_NAME = 'Helvetica'
 
