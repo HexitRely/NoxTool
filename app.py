@@ -26,6 +26,9 @@ from utils.discord_notifier import (
 # Load environment variables
 load_dotenv()
 
+# Detect Vercel environment
+IS_VERCEL = os.getenv('VERCEL') == '1'
+
 app = Flask(__name__)
 # Database path: fallback to data/database.db
 database_url = os.getenv('DATABASE_URL')
@@ -36,7 +39,11 @@ if database_url and database_url.startswith('postgres://'):
 if database_url:
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
-    db_path = os.path.join(os.getcwd(), 'data', 'database.db')
+    # On Vercel, the local folder is read-only. Use /tmp for SQLite if no DATABASE_URL is provided.
+    if IS_VERCEL:
+        db_path = os.path.join('/tmp', 'database.db')
+    else:
+        db_path = os.path.join(os.getcwd(), 'data', 'database.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -91,12 +98,19 @@ def require_login_globally():
             }), 403
 
 # Ensure folders exist
-PDF_FOLDER = os.path.join(os.getcwd(), 'static', 'pdfs')
-os.makedirs(PDF_FOLDER, exist_ok=True)
-os.makedirs('data', exist_ok=True)
+if IS_VERCEL:
+    # Use /tmp for ephemeral storage on Vercel
+    PDF_FOLDER = os.path.join('/tmp', 'pdfs')
+    COST_UPLOAD_FOLDER = os.path.join('/tmp', 'costs')
+    DATA_FOLDER = os.path.join('/tmp', 'data')
+else:
+    PDF_FOLDER = os.path.join(os.getcwd(), 'static', 'pdfs')
+    COST_UPLOAD_FOLDER = os.path.join(os.getcwd(), 'static', 'uploads', 'costs')
+    DATA_FOLDER = os.path.join(os.getcwd(), 'data')
 
-COST_UPLOAD_FOLDER = os.path.join(os.getcwd(), 'static', 'uploads', 'costs')
+os.makedirs(PDF_FOLDER, exist_ok=True)
 os.makedirs(COST_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(DATA_FOLDER, exist_ok=True)
 app.config['COST_UPLOAD_FOLDER'] = COST_UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 MB limit
 
@@ -192,10 +206,11 @@ with app.app_context():
                      can_manage_catalog=True, can_access_history=True,
                      can_access_dashboard=True, can_access_pos=True, can_access_crm=True,
                      can_access_finance=True, can_access_settings=True, can_access_projects=True)
-        admin.set_password('admin123')
+        # Updated password to match documentation
+        admin.set_password('NoxTools2024!')
         db.session.add(admin)
         db.session.commit()
-        print("[NDG Shield] ✅ Stworzono konto admin (hasło: admin123). Zmień hasło po pierwszym logowaniu!")
+        print("[NDG Shield] ✅ Stworzono konto admin (hasło: NoxTools2024!). Zmień hasło po pierwszym logowaniu!")
 
     # Initialize default config keys individually if they don't exist
     configs = {

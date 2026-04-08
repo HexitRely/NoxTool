@@ -9,3 +9,4 @@ Pillow
 requests
 psycopg2-binary
 pypdf
+cryptography
