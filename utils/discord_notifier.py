@@ -22,13 +22,19 @@ def send_invoice_to_admin(webhook_url, invoice_data, pdf_path):
     cfg = config.get(doc_type, config['FAKTURA'])
     
     try:
+        # Sanitize data
+        client_name = invoice_data.get('client_name', 'Nieznany')
+        total_val = invoice_data.get('total', 0.0)
+        formatted_total = f"{float(total_val):.2f}"
+        inv_number = invoice_data.get('number', '---')
+        
         fields = [
-            {"name": "Klient", "value": invoice_data['client_name'], "inline": True},
+            {"name": "Klient", "value": str(client_name), "inline": True},
             {"name": "Metoda Płatności", "value": f"**{payment_method}**", "inline": True}
         ]
         
         if doc_type != 'WZ':
-            fields.insert(0, {"name": "Kwota", "value": f"**{invoice_data['total']:.2f} PLN**", "inline": True})
+            fields.insert(0, {"name": "Kwota", "value": f"**{formatted_total} PLN**", "inline": True})
             status = "Oczekiwanie na przelew" if payment_method == 'PRZELEW' else "Opłacono"
             fields.append({"name": "Status", "value": status, "inline": False})
             
@@ -36,14 +42,14 @@ def send_invoice_to_admin(webhook_url, invoice_data, pdf_path):
         if invoice_data.get('is_encrypted'):
             fields.append({
                 "name": "🔐 Hasło do pliku", 
-                "value": f"||{invoice_data['pdf_password']}||", 
+                "value": f"||{invoice_data.get('pdf_password', 'brak')}||", 
                 "inline": False
             })
             
         embed = {
-            "title": f"{cfg['emoji']} {cfg['title']}: {invoice_data['number']}",
+            "title": f"{cfg['emoji']} {cfg['title']}: {inv_number}",
             "fields": fields,
-            "color": cfg['color'],
+            "color": int(cfg.get('color', 3066993)),
             "footer": {"text": "NoxPos - Finanse"}
         }
         return _send_with_file(webhook_url, embed, pdf_path)
@@ -139,23 +145,32 @@ def _send_with_file(webhook_url, embed, file_path):
             print(f"File not found for Discord upload: {file_path}")
             return False
             
+        file_size = os.path.getsize(file_path)
+        print(f"DEBUG Discord: Uploading file {os.path.basename(file_path)} ({file_size} bytes)")
+        
+        if file_size == 0:
+            print(f"DEBUG Discord: WARNING! File is empty.")
+
         with open(file_path, 'rb') as f:
-            files = {
-                "file": (os.path.basename(file_path), f, "application/pdf")
-            }
-            payload = {
-                "payload_json": json.dumps({"embeds": [embed]})
-            }
-            # Clean webhook URL just in case
-            webhook_url = webhook_url.strip()
-            response = requests.post(webhook_url, data=payload, files=files, timeout=15)
+            # Send file as 'file' form field
+            files = { "file": (os.path.basename(file_path), f, "application/pdf") }
+            
+            # Send embed data as 'payload_json'
+            payload = { "payload_json": json.dumps({"embeds": [embed]}) }
+            
+            url = webhook_url.strip()
+            response = requests.post(url, data=payload, files=files, timeout=20)
+            
             if response.status_code not in [200, 204]:
-                print(f"Discord Webhook Error ({os.path.basename(file_path)}): {response.status_code} - {response.text}")
+                print(f"Discord Webhook Error ({os.path.basename(file_path)}): Status {response.status_code}")
+                print(f"Response Body: {response.text}")
             else:
                 print(f"Discord Notification Sent Successfully: {os.path.basename(file_path)}")
             return response.status_code in [200, 204]
     except Exception as e:
         print(f"Error in _send_with_file: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def send_expense_alert_to_admin(webhook_url, expense_data, file_path=None):
@@ -182,4 +197,53 @@ def send_expense_alert_to_admin(webhook_url, expense_data, file_path=None):
             return response.status_code in [200, 204]
     except Exception as e:
         print(f"Error sending expense alert: {str(e)}")
+        return False
+def send_brief_notification(webhook_url, project_data):
+    if not webhook_url or webhook_url == "":
+        return False
+    try:
+        is_secret = project_data.get('is_secret', False)
+        color = 15844367 if is_secret else 3447003 # Gold for Secret, Blue for normal
+        
+        embed = {
+            "title": f"📁 NOWY BRIEF PROJEKTU: {project_data['name']}",
+            "fields": [
+                {"name": "Klient", "value": project_data['client_name'], "inline": True},
+                {"name": "Typ", "value": f"**{project_data['type']}**", "inline": True},
+                {"name": "Deadline", "value": project_data['deadline'] or 'Brak', "inline": True},
+                {"name": "🔒 Projekt Tajny (NDA)", "value": "TAK - Zakaz publikacji" if is_secret else "NIE", "inline": False}
+            ],
+            "color": color,
+            "footer": {"text": "NoxPos - Produkcja"}
+        }
+        payload = {"payload_json": json.dumps({"embeds": [embed]})}
+        response = requests.post(webhook_url, data=payload, timeout=10)
+        return response.status_code in [200, 204]
+    except Exception as e:
+        print(f"Error sending brief notification: {str(e)}")
+        return False
+
+def send_task_update_notification(webhook_url, task_data):
+    if not webhook_url or webhook_url == "":
+        return False
+    try:
+        # Green for DONE, Orange for others
+        color = 3066993 if task_data['new_status'] == 'DONE' else 15105570
+        
+        embed = {
+            "title": f"📝 Zmiana statusu zadania: {task_data['title']}",
+            "description": f"Zadanie w projekcie **{task_data['project_name']}** zmieniło status.",
+            "fields": [
+                {"name": "Poprzedni", "value": task_data['old_status'], "inline": True},
+                {"name": "Nowy", "value": f"➡️ **{task_data['new_status']}**", "inline": True},
+                {"name": "Zmienił", "value": task_data['user_name'], "inline": False}
+            ],
+            "color": color,
+            "footer": {"text": "NoxPos - Zadania"}
+        }
+        payload = {"payload_json": json.dumps({"embeds": [embed]})}
+        response = requests.post(webhook_url, data=payload, timeout=10)
+        return response.status_code in [200, 204]
+    except Exception as e:
+        print(f"Error sending task update notification: {str(e)}")
         return False

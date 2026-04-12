@@ -11,7 +11,9 @@ class Studio(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     address = db.Column(db.String(500))
+    # Lat/Lng removed (florist residual)
     bank_account = db.Column(db.String(50))
+
 
 # ── NEW: User with RBAC ───────────────────────────────────────────────────────
 class User(db.Model, UserMixin):
@@ -107,6 +109,7 @@ class Client(db.Model):
     id_type = db.Column(db.String(10), default='NIP')
     email = db.Column(db.String(100))
     phone = db.Column(db.String(30))
+    company_name = db.Column(db.String(200), nullable=True)
     discord_id = db.Column(db.String(100))
     website = db.Column(db.String(200))
     # Advanced CRM fields
@@ -127,6 +130,11 @@ class MusicProject(db.Model):
     target_deadline = db.Column(db.DateTime)
     status = db.Column(db.String(50), default='Active')
     invoice_id = db.Column(db.Integer, db.ForeignKey('invoice.id'))
+    # Brief & Selection logic
+    public_token = db.Column(db.String(36), unique=True, nullable=True)
+    brief_data = db.Column(db.JSON, nullable=True)
+    internal_notes = db.Column(db.Text, nullable=True)
+    
     # Studio isolation
     studio_id = db.Column(db.Integer, db.ForeignKey('studio.id'), nullable=True)
     # Project extensions
@@ -165,12 +173,21 @@ class Invoice(db.Model):
     include_qr_code = db.Column(db.Boolean, default=True)
     created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     is_worker_invoice = db.Column(db.Boolean, default=False)
+    # Delivery system
+    delivery_status = db.Column(db.String(20), default='PENDING') # PENDING, READY, IN_DELIVERY, DELIVERED, CANCELLED
+    # Lat/Lng removed (florist residual)
+    assigned_courier_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    
     # Studio isolation
     studio_id = db.Column(db.Integer, db.ForeignKey('studio.id'), nullable=True)
+    metadata_json = db.Column(db.Text, nullable=True)
+
 
     client = db.relationship('Client', backref=db.backref('invoices', lazy=True, cascade='all, delete-orphan'))
-    creator = db.relationship('User', backref=db.backref('created_invoices', lazy=True))
+    creator = db.relationship('User', foreign_keys=[created_by_id], backref=db.backref('created_invoices', lazy=True))
+    assigned_courier = db.relationship('User', foreign_keys=[assigned_courier_id], backref=db.backref('courier_deliveries', lazy=True))
     studio = db.relationship('Studio', backref=db.backref('invoices', lazy=True))
+
 
 class InvoiceItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -183,8 +200,9 @@ class InvoiceItem(db.Model):
 
 class Config(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    key = db.Column(db.String(50), unique=True)
+    key = db.Column(db.String(50))
     value = db.Column(db.String(500))
+    studio_id = db.Column(db.Integer, db.ForeignKey('studio.id'), nullable=True)
 
 class ProjectConfirmation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -214,12 +232,13 @@ class Expense(db.Model):
 class ModuleConfig(db.Model):
     __tablename__ = 'module_config'
     id = db.Column(db.Integer, primary_key=True)
-    key = db.Column(db.String(50), unique=True, nullable=False)
+    key = db.Column(db.String(50), nullable=False)
     display_name = db.Column(db.String(100), nullable=False)
     icon = db.Column(db.String(10), default='📦')
     is_enabled = db.Column(db.Boolean, default=True)
     is_core = db.Column(db.Boolean, default=False)
     sort_order = db.Column(db.Integer, default=0)
+    studio_id = db.Column(db.Integer, db.ForeignKey('studio.id'), nullable=True)
 
 # ── NEW: Project Tasks with Markdown ──────────────────────────────────────────
 class ProjectTask(db.Model):
@@ -262,3 +281,35 @@ class CalendarEvent(db.Model):
             'user_id': self.user_id,
             'username': self.user.username if self.user else 'Unknown'
         }
+
+# ── NEW: Time Tracking & Work Logs ──────────────────────────────────────────
+class TimeLog(db.Model):
+    __tablename__ = 'time_log'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    studio_id = db.Column(db.Integer, db.ForeignKey('studio.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False, default=datetime.utcnow().date)
+    start_time = db.Column(db.String(5), nullable=False) # HH:MM
+    end_time = db.Column(db.String(5), nullable=False)   # HH:MM
+    duration = db.Column(db.Float) # in decimal hours
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    
+    user = db.relationship('User', foreign_keys=[user_id], backref=db.backref('time_logs', lazy=True, cascade='all, delete-orphan'))
+    creator = db.relationship('User', foreign_keys=[created_by_id])
+    studio = db.relationship('Studio', backref=db.backref('time_logs', lazy=True))
+
+class WorkLogReport(db.Model):
+    __tablename__ = 'work_log_report'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    studio_id = db.Column(db.Integer, db.ForeignKey('studio.id'), nullable=False)
+    number = db.Column(db.String(100), unique=True)
+    month = db.Column(db.Integer)
+    year = db.Column(db.Integer)
+    total_hours = db.Column(db.Float)
+    pdf_path = db.Column(db.String(300))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('work_reports', lazy=True))
+    studio = db.relationship('Studio', backref=db.backref('work_reports', lazy=True))

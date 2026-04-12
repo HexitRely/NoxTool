@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brief Projektu | {{ project.name }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0a0c;
+            --accent-color: #7c4dff;
+            --secondary-color: #00d4ff;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a8;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --glass-blur: 15px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background: var(--bg-color);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(124, 77, 255, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 40%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .brief-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(var(--glass-blur));
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 30px;
+            background: linear-gradient(90deg, var(--accent-color), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        header p {
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        input[type="text"], 
+        input[type="url"], 
+        select, 
+        textarea {
+            width: 100%;
+            padding: 14px 18px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            color: white;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--accent-color);
+            background: rgba(124, 77, 255, 0.05);
+            box-shadow: 0 0 0 4px rgba(124, 77, 255, 0.1);
+        }
+
+        select option {
+            background-color: #1a1a1e;
+            color: white;
+            padding: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        button {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--accent-color), #4527a0);
+            border: none;
+            border-radius: 14px;
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 20px;
+            box-shadow: 0 10px 15px -3px rgba(124, 77, 255, 0.4);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 25px -5px rgba(124, 77, 255, 0.5);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .success-overlay {
+            display: none;
+            text-align: center;
+            padding: 40px 0;
+            animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes scaleUp {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .success-icon {
+            font-size: 4rem;
+            color: #4ade80;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 600px) {
+            .grid { grid-template-columns: 1fr; }
+            .brief-card { padding: 30px 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="brief-card" id="main-card">
+            <div class="logo">NoxTools</div>
+            <header>
+                <h1>Brief Projektu</h1>
+                <p>Projekt: <strong>{{ project.name }}</strong></p>
+            </header>
+
+            <form id="brief-form">
+                <div style="background: rgba(255,255,255,0.03); border: 1px dashed var(--border-color); padding: 20px; border-radius: 16px; margin-bottom: 30px;">
+                    <h3 style="font-size: 1rem; margin-bottom: 15px; color: var(--secondary-color);">👤 Twoje Dane (Opcjonalnie)</h3>
+                    <div class="form-group">
+                        <label>Imię i Nazwisko / Nazwa</label>
+                        <input type="text" id="c-name" value="{{ project.client.name }}" placeholder="Uzupełnij jeśli puste...">
+                    </div>
+                    <div class="grid">
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input type="text" id="c-email" value="{{ project.client.email or '' }}" placeholder="email@przyklad.com">
+                        </div>
+                        <div class="form-group">
+                            <label>Telefon</label>
+                            <input type="text" id="c-phone" value="{{ project.client.phone or '' }}" placeholder="Nr telefonu">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Firma (Nazwa do faktury)</label>
+                        <input type="text" id="c-company" value="{{ project.client.company_name or '' }}" placeholder="Pełna nazwa firmy">
+                    </div>
+                    <div class="grid">
+                        <div class="form-group">
+                            <label>NIP</label>
+                            <input type="text" id="c-nip" value="{{ project.client.nip or '' }}" placeholder="Np. 1234567890">
+                        </div>
+                        <div class="form-group">
+                            <label>Adres</label>
+                            <input type="text" id="c-address" value="{{ project.client.address or '' }}" placeholder="Ulica, miasto, kod pocztowy">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Typ Projektu</label>
+                    <select id="p-type" required>
+                        <option value="" disabled selected>Wybierz typ...</option>
+                        <option value="MIX">🎚️ MIX</option>
+                        <option value="MASTERING">💿 Mastering</option>
+                        <option value="VOCAL_RECORDING">🎙️ Nagranie Wokalu</option>
+                        <option value="FULL_PRODUCTION">🎹 Kompletna Produkcja</option>
+                        <option value="OTHER">✨ Inne</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Linki do Plików (WeTransfer, Drive, itp.)</label>
+                    <input type="url" id="p-links" placeholder="https://..." required>
+                </div>
+
+                <div class="grid">
+                    <div class="form-group">
+                        <label>BPM</label>
+                        <input type="text" id="p-bpm" value="{{ project.bpm or '' }}" placeholder="Np. 128">
+                    </div>
+                    <div class="form-group">
+                        <label>Tonacja / Skala</label>
+                        <input type="text" id="p-key" value="{{ project.key or '' }}" placeholder="Np. C Minor">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Częstotliwość próbkowania (Sample Rate)</label>
+                    <select id="p-sample-rate">
+                        <option value="44.1">44.1 kHz</option>
+                        <option value="48" selected>48 kHz (Standard)</option>
+                        <option value="88.2">88.2 kHz</option>
+                        <option value="96">96 kHz</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Wizja Artystyczna (Opis klimatu)</label>
+                    <textarea id="p-vibe" rows="3" placeholder="Np. agresywny dół, szerokie wokale, vintage vibe..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Utwory Referencyjne / Inspiracje (Linki)</label>
+                    <textarea id="p-refs" rows="3" placeholder="Wklej linki do Spotify/YouTube..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Uwagi do konkretnych fragmentów (Timestamps)</label>
+                    <textarea id="p-segment-notes" rows="3" placeholder="Np. 2:30 efekt radia na głosie..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Deadline (Kiedy potrzebujesz pierwszej wersji?)</label>
+                    <input type="date" id="p-deadline">
+                </div>
+
+                <div class="form-group">
+                    <label>Dodatkowe ogólne uwagi</label>
+                    <textarea id="p-notes" rows="4" placeholder="Wszystko co jeszcze powinniśmy wiedzieć..."></textarea>
+                </div>
+
+                <div class="form-group" style="background: rgba(124, 77, 255, 0.1); padding: 15px; border-radius: 12px; border: 1px solid var(--accent-color);">
+                    <label style="display: flex; align-items: center; gap: 10px; color: white; cursor: pointer; margin-bottom: 0;">
+                        <input type="checkbox" id="p-secret" style="width: 20px; height: 20px;">
+                        <span>🔒 Projekt Tajny (Zakaz publikacji w social mediach / NDA)</span>
+                    </label>
+                </div>
+
+                <button type="submit" id="submit-btn">Wyślij Brief</button>
+            </form>
+
+            <div class="success-overlay" id="success-state">
+                <div class="success-icon">✓</div>
+                <h2>Dziękujemy!</h2>
+                <p style="margin-bottom: 25px;">Twój brief został wysłany do realizatora.</p>
+                <button type="button" onclick="editBrief()" style="background: rgba(255,255,255,0.1); box-shadow: none;">️✏️ Zmień dane / Dodaj informacje</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function editBrief() {
+            document.getElementById('brief-form').style.display = 'block';
+            document.getElementById('success-state').style.display = 'none';
+            document.getElementById('submit-btn').disabled = false;
+            document.getElementById('submit-btn').textContent = 'Zaktualizuj Brief';
+        }
+
+        document.getElementById('brief-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.textContent = 'Trwa zapisywanie...';
+
+            const data = {
+                client_info: {
+                    name: document.getElementById('c-name').value,
+                    email: document.getElementById('c-email').value,
+                    phone: document.getElementById('c-phone').value,
+                    company: document.getElementById('c-company').value,
+                    nip: document.getElementById('c-nip').value,
+                    address: document.getElementById('c-address').value
+                },
+                is_secret: document.getElementById('p-secret').checked,
+                type: document.getElementById('p-type').value,
+                links: document.getElementById('p-links').value,
+                bpm: document.getElementById('p-bpm').value,
+                key: document.getElementById('p-key').value,
+                sample_rate: document.getElementById('p-sample-rate').value,
+                vibe: document.getElementById('p-vibe').value,
+                references: document.getElementById('p-refs').value,
+                segment_notes: document.getElementById('p-segment-notes').value,
+                deadline: document.getElementById('p-deadline').value,
+                notes: document.getElementById('p-notes').value,
+                submitted_at: new Date().toISOString()
+            };
+
+            try {
+                const response = await fetch('/api/public/brief/{{ project.public_token }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (response.ok) {
+                    document.getElementById('brief-form').style.display = 'none';
+                    document.getElementById('success-state').style.display = 'block';
+                } else {
+                    alert('Błąd podczas zapisywania briefu.');
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                alert('Błąd połączenia.');
+                btn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>

@@ -44,7 +44,7 @@ def setup_official():
                 password_hash=generate_password_hash(admin_password),
                 role='ADMIN',
                 must_change_password=False,
-                display_name="Master Admin"
+                full_name="Master Admin"
             )
             
             db.session.add(master_admin)

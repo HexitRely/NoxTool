@@ -85,7 +85,8 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
         'FAKTURA': 'RACHUNEK / FAKTURA',
         'PARAGON': 'PARAGON',
         'WYCENA': 'OFERTA / WYCENA',
-        'WZ': 'WZ - WYDANIE ZEWNĘTRZNE'
+        'WZ': 'WZ - WYDANIE ZEWNĘTRZNE',
+        'ZAMOWIENIE': 'ZAMÓWIENIE (KBE FLORIST)'
     }
     friendly_type = type_map.get(doc_type, doc_type)
     
@@ -127,31 +128,49 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
         c.drawString(110*mm, height - 60*mm, f"NIP: {buyer_nip}")
     c.drawString(110*mm, height - 65*mm, buyer_addr)
     
-    # Contract Info
-    if invoice_data.get('contract_number'):
+    # Metadata (Florist info)
+    metadata = invoice_data.get('metadata', {})
+    if metadata:
         c.setFont(FONT_NAME, 10)
-        c.drawString(20*mm, height - 72*mm, f"Wystawiono na podstawie umowy nr {invoice_data['contract_number']}")
-    
-    # Description
-    if invoice_data.get('description'):
+        c.drawString(110*mm, height - 72*mm, "ODBIORCA:")
         c.setFont(FONT_NAME, 9)
-        c.drawString(20*mm, height - 77*mm, f"Opis: {invoice_data['description']}")
-    
+        name_rec = metadata.get('recipient_name', '---')
+        addr_rec = metadata.get('recipient_address', '---')
+        phone_rec = metadata.get('recipient_phone', '')
+        time_del = metadata.get('time', 'ASAP')
+        note = metadata.get('note', '')
+
+        # Combine name and phone
+        c.drawString(110*mm, height - 77*mm, f"{name_rec} {phone_rec}")
+        c.drawString(110*mm, height - 82*mm, f"Adres: {addr_rec}")
+        c.drawString(110*mm, height - 87*mm, f"Czas: {time_del}")
+        
+        if note:
+            c.setFont(FONT_NAME, 8)
+            c.drawString(20*mm, height - 87*mm, f"BILECIK/NOTATKA: {note}")
+        
+        # Adjust table header downward
+        y_table_start = height - 95*mm
+    else:
+        y_table_start = height - 85*mm
+
     # Table header
-    c.line(20*mm, height - 80*mm, 190*mm, height - 80*mm)
-    c.drawString(20*mm, height - 85*mm, "Lp.")
-    c.drawString(30*mm, height - 85*mm, "Nazwa usługi")
+    table_header_y = y_table_start + 5*mm
+    c.line(20*mm, table_header_y + 3*mm, 190*mm, table_header_y + 3*mm)
+    c.setFont(FONT_NAME, 10)
+    c.drawString(20*mm, table_header_y, "Lp.")
+    c.drawString(30*mm, table_header_y, "Nazwa usługi")
     
     if doc_type != 'WZ':
-        c.drawString(110*mm, height - 85*mm, "Cena jedn.")
-        c.drawString(140*mm, height - 85*mm, "Ilość")
-        c.drawString(165*mm, height - 85*mm, "Wartość")
+        c.drawString(110*mm, table_header_y, "Cena jedn.")
+        c.drawString(140*mm, table_header_y, "Ilość")
+        c.drawString(165*mm, table_header_y, "Wartość")
     else:
-        c.drawString(165*mm, height - 85*mm, "Ilość")
+        c.drawString(165*mm, table_header_y, "Ilość")
         
-    c.line(20*mm, height - 88*mm, 190*mm, height - 88*mm)
+    c.line(20*mm, table_header_y - 2*mm, 190*mm, table_header_y - 2*mm)
     
-    y = height - 95*mm
+    y = table_header_y - 7*mm
     for i, item in enumerate(invoice_data['items']):
         c.drawString(20*mm, y, str(i+1))
         c.drawString(30*mm, y, item['name'])
@@ -260,5 +279,73 @@ def create_confirmation_pdf(filepath, project_data, my_data):
     # Centered branding footer
     c.setFont(FONT_NAME, 8)
     c.drawCentredString(width/2, 5*mm, "powered by NOX")
+    
+    c.save()
+
+def create_time_report_pdf(filepath, report_data):
+    """
+    report_data should contain:
+    - number: document number
+    - month_name: e.g. 'STYCZEŃ'
+    - year: e.g. 2026
+    - user_full_name: employee name
+    - logs: list of {date, start, end, duration, creator}
+    - total_hours: float
+    """
+    c = canvas.Canvas(filepath, pagesize=A4)
+    width, height = A4
+    
+    # Header
+    c.setFont(FONT_NAME, 14)
+    c.drawString(20*mm, height - 20*mm, f"ZBIORCZA KARTA PRACY - {report_data['month_name']} {report_data['year']}")
+    c.setFont(FONT_NAME, 10)
+    c.drawRightString(190*mm, height - 20*mm, f"Nr dokumentu: {report_data['number']}")
+    
+    c.setFont(FONT_NAME, 11)
+    c.drawString(20*mm, height - 30*mm, f"Pracownik / Freelancer: {report_data['user_full_name']}")
+    c.drawString(20*mm, height - 35*mm, f"Data wystawienia: {datetime.now().strftime('%Y-%m-%d')}")
+    
+    # Table Header
+    y = height - 45*mm
+    c.line(20*mm, y + 3*mm, 190*mm, y + 3*mm)
+    c.setFont(FONT_NAME, 9)
+    c.drawString(22*mm, y, "LP")
+    c.drawString(35*mm, y, "DATA")
+    c.drawString(65*mm, y, "GODZINA OD")
+    c.drawString(95*mm, y, "GODZINA DO")
+    c.drawString(125*mm, y, "SUMA (h)")
+    c.drawString(155*mm, y, "KTO UZUPEŁNIAŁ")
+    c.line(20*mm, y - 2*mm, 190*mm, y - 2*mm)
+    
+    y -= 7*mm
+    for i, log in enumerate(report_data['logs']):
+        if y < 30*mm: # Simple pagination
+            c.showPage()
+            c.setFont(FONT_NAME, 9)
+            y = height - 20*mm
+            c.line(20*mm, y + 3*mm, 190*mm, y + 3*mm)
+            
+        c.drawString(22*mm, y, str(i+1))
+        c.drawString(35*mm, y, str(log['date']))
+        c.drawString(65*mm, y, str(log['start']))
+        c.drawString(95*mm, y, str(log['end']))
+        c.drawString(125*mm, y, f"{log['duration']:.2f}")
+        c.drawString(155*mm, y, str(log['creator']))
+        y -= 6*mm
+
+    c.line(20*mm, y + 4*mm, 190*mm, y + 4*mm)
+    
+    # Summary
+    y -= 10*mm
+    c.setFont(FONT_NAME, 12)
+    c.drawString(130*mm, y, f"ŁĄCZNIE: {report_data['total_hours']:.2f} h")
+    
+    # Footer
+    c.setFont(FONT_NAME, 9)
+    c.drawString(20*mm, 20*mm, f"Dokument wystawiony dla: {report_data['user_full_name']}")
+    
+    # Branding
+    c.setFont(FONT_NAME, 8)
+    c.drawCentredString(width/2, 5*mm, "System NoxPos - Raport Czasu Pracy")
     
     c.save()

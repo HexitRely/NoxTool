@@ -15,7 +15,8 @@ pip install -r requirements.txt --quiet --default-timeout=100
 
 :: Initialize database
 echo Konfiguracja bazy danych...
-python init_db.py
+:: (Autodetected in app.py)
+
 
 :: Start the app
 echo Start aplikacji na http://127.0.0.1:5000

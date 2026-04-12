@@ -9,22 +9,56 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUser = null;
     let selectedItems = [];
     let editingInvoiceId = null;
-    let currentType = 'FAKTURA';
+    let currentType = 'PARAGON';
     let currentCategory = 'All';
     let currentPayment = 'PRZELEW';
+    let map = null;
+    let ordersList = [];
+    let orderMarkers = [];
+
 
     // Elements (use function for nav-btn as they may change)
     const views = document.querySelectorAll('.view');
     const viewTitle = document.getElementById('view-title');
+    const sidebar = document.getElementById('main-sidebar');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
     function getNavButtons() { return document.querySelectorAll('#sidebar-nav .nav-btn'); }
+
+    // --- SIDEBAR TOGGLE ---
+    function initSidebarToggle() {
+        if (!sidebar || !sidebarToggle) return;
+        
+        try {
+            // Load state
+            const isCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+            if (isCollapsed) {
+                sidebar.classList.add('collapsed');
+                const span = sidebarToggle.querySelector('span');
+                if (span) span.textContent = '▶';
+            }
+
+            sidebarToggle.onclick = () => {
+                const nowCollapsed = sidebar.classList.toggle('collapsed');
+                const span = sidebarToggle.querySelector('span');
+                if (span) span.textContent = nowCollapsed ? '▶' : '◀';
+                localStorage.setItem('sidebar-collapsed', nowCollapsed);
+            };
+        } catch (e) { console.error("Sidebar toggle error:", e); }
+    }
+    initSidebarToggle();
+
+
 
     // --- VIEW ROUTING ---
     function showView(viewId, skipReset = false) {
+    window.app.showView = showView;
         if (currentUser && currentUser.must_change_password && viewId !== 'settings') {
+            showToast('⚠️ Musisz najpierw zmienić hasło i uzupełnić profil w Ustawieniach!', 'warning');
             return;
         }
+
         // Permission guard â€” block access to views user doesn't have permission for (non-admin only)
-        if (currentUser && currentUser.role !== 'ADMIN') {
+        if (currentUser && currentUser.role && currentUser.role !== 'ADMIN') {
             const permMap = {
                 dashboard: 'can_access_dashboard',
                 pos: 'can_access_pos',
@@ -32,23 +66,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 products: 'can_manage_catalog',
                 clients: 'can_access_crm',
                 finance: 'can_access_finance',
-                settings: 'can_access_settings',
-                projects: 'can_access_projects'
+                finance: 'can_access_finance',
+                projects: 'can_access_projects',
+                calendar: 'can_access_dashboard',
+                orders: 'can_access_crm' // Tied to CRM module
             };
+
+
+
             const requiredPerm = permMap[viewId];
-            if (requiredPerm && !currentUser[requiredPerm]) {
+            if (requiredPerm && currentUser[requiredPerm] === false) {
                 showToast('🚫 Brak dostępu do tego modułu.', 'error');
                 return;
             }
         }
+
+
         
         views.forEach(v => v.style.display = 'none');
         const targetView = document.getElementById(`view-${viewId}`);
         if (targetView) targetView.style.display = 'block';
         
         getNavButtons().forEach(b => b.classList.toggle('active', b.dataset.view === viewId));
-        const titles = { dashboard: 'Dashboard', pos: 'Punkt Sprzedaży', invoices: 'Historia', products: 'Katalog', clients: 'Klienci', finance: 'Finanse', settings: 'Ustawienia', calendar: 'Mój Kalendarz', projects: 'Projekty i Zadania' };
+        const titles = { dashboard: 'Dashboard', pos: 'Punkt Sprzedaży', invoices: 'Historia', products: 'Katalog', clients: 'Klienci', finance: 'Finanse', settings: 'Ustawienia', calendar: 'Mój Kalendarz', projects: 'Projekty i Zadania', orders: 'Mapa Zamówień & Dostawy' };
         viewTitle.textContent = titles[viewId] || viewId;
+
         
         if (viewId === 'dashboard') loadDashboard();
         if (viewId === 'invoices') loadInvoices();
@@ -63,7 +105,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewId === 'pos') initPOS(skipReset);
         if (viewId === 'calendar') loadCalendar();
         if (viewId === 'projects') loadProjects();
+        if (viewId === 'orders') {
+            window.app.initOrdersMap();
+
+            // Critical for Leaflet: invalidate size after the view is display:block
+            setTimeout(() => { 
+                if (map) {
+                    map.invalidateSize();
+                    console.log("[NoxLog] Map invalidated");
+                }
+            }, 500);
+        }
+
     }
+
+
 
     document.getElementById('sidebar-nav').addEventListener('click', e => {
         const btn = e.target.closest('.nav-btn');
@@ -94,10 +150,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (viewKey === 'invoices' && !currentUser.can_access_history && !currentUser.can_create_documents) isEnabled = false;
                 if (viewKey === 'products' && !currentUser.can_manage_catalog) isEnabled = false;
                 if (viewKey === 'clients' && !currentUser.can_access_crm) isEnabled = false;
+                if (viewKey === 'orders' && !currentUser.can_access_dashboard) isEnabled = false;
+
                 if (viewKey === 'finance' && !currentUser.can_access_finance) isEnabled = false;
-                if (viewKey === 'settings' && !currentUser.can_access_settings) isEnabled = false;
-                if (viewKey === 'projects' && !currentUser.can_access_projects) isEnabled = false;
+
+                if (viewKey === 'settings') isEnabled = true;
+                else if (viewKey === 'projects' && !currentUser.can_access_projects) isEnabled = false;
+                
+                // Extra rule: Courier only sees Orders and Settings
+                if (r === 'COURIER') {
+                    if (viewKey !== 'orders' && viewKey !== 'settings') isEnabled = false;
+                    else isEnabled = true;
+                }
             }
+
 
             btn.style.display = isEnabled ? '' : 'none';
         });
@@ -142,13 +208,23 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAuthAndSetup() {
         try {
             currentUser = await apiFetch('auth/me');
-            if (!currentUser || currentUser.error) throw new Error("Unauthorized");
+            if (!currentUser || currentUser.error) {
+                 console.warn("User not logged in or session expired.");
+                 currentUser = null;
+                 return;
+            }
+
             
             // Setup Header UI
-            document.getElementById('current-user-header').textContent = currentUser.username;
+            const userHeader = document.getElementById('current-user-header');
+            if (userHeader) userHeader.textContent = currentUser.username || "user";
+            
             const badge = document.getElementById('auth-role-badge');
-            badge.textContent = currentUser.role.substring(0, 2).toUpperCase();
-            badge.className = `auth-badge role-${currentUser.role}`;
+            if (badge && currentUser.role) {
+                badge.textContent = currentUser.role.substring(0, 2).toUpperCase();
+                badge.className = `auth-badge role-${currentUser.role}`;
+            }
+
 
             if (currentUser.role === 'ADMIN') {
                 const sSelect = document.getElementById('studio-selector');
@@ -156,23 +232,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 const studios = await apiFetch('studios');
                 
                 if (Array.isArray(studios)) {
-                    sSelect.innerHTML = '<option value="">Wszystkie (ZarzÄ…dzanie PeĹ‚ne)</option>' + 
-                        studios.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+                    sSelect.innerHTML = studios.map(s => `<option value="${s.id}" ${s.id === currentUser.assigned_studio_id ? 'selected' : ''}>${s.name}</option>`).join('');
                 }
                 
-                // Get URL paramount
-                const urlParams = new URLSearchParams(window.location.search);
-                if (urlParams.has('studio_id')) sSelect.value = urlParams.get('studio_id');
-                
-                sSelect.onchange = (e) => {
+                sSelect.onchange = async (e) => {
                     const sid = e.target.value;
-                    if (sid) {
-                        window.location.href = `/?studio_id=${sid}`;
-                    } else {
-                        window.location.href = `/`;
+                    const res = await apiFetch('auth/switch-studio', 'POST', { studio_id: sid });
+                    if (res.success) {
+                        showToast(`Przełączono na: ${res.studio_name}`, 'success');
+                        setTimeout(() => window.location.reload(), 600);
                     }
                 };
             }
+
+            // Default view for Courier
+            if (currentUser.role === 'COURIER') {
+                showView('orders');
+            }
+
         } catch (e) {
             console.error(e);
             window.location.href = '/login';
@@ -322,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Reset basket and editing state
             selectedItems = [];
             editingInvoiceId = null;
-            document.getElementById('btn-pos-generate').textContent = 'WYSTAW I WYĹšLIJ DOKUMENT';
+            document.getElementById('btn-pos-generate').textContent = 'ZAKOŃCZ i WYSTAW';
             document.getElementById('pos-client-name').value = '';
             document.getElementById('pos-client-nip').value = '';
             document.getElementById('pos-client-address').value = '';
@@ -374,8 +451,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentType = btn.dataset.type;
                 document.getElementById('pos-payment-section').style.display = 
                     (currentType === 'WZ' || currentType === 'WYCENA') ? 'none' : 'block';
+                
+                // Show/hide client details
+                const clientSection = document.getElementById('pos-client-details-section');
+                if (currentType === 'PARAGON') {
+                    clientSection.style.display = 'none';
+                } else {
+                    clientSection.style.display = 'block';
+                }
             };
         });
+
+        // Initialize display based on default type
+        const clientSection = document.getElementById('pos-client-details-section');
+        const docTypeContainer = document.getElementById('pos-doc-type-container');
+
+        if (currentUser.pos_mode === 'ZAMOWIENIA') {
+             currentType = 'ZAMOWIENIE';
+             const btnGen = document.getElementById('btn-pos-generate');
+             if(btnGen) btnGen.textContent = 'DODAJ ZAMÓWIENIE';
+             if(docTypeContainer) docTypeContainer.style.display = 'none';
+        }
+
+        const stdFields = document.getElementById('pos-standard-fields');
+
+        if(stdFields) stdFields.style.display = 'grid';
+        if(clientSection) {
+             clientSection.style.display = currentType === 'PARAGON' ? 'none' : 'block';
+        }
 
         // Payment Method
         document.querySelectorAll('.payment-btn').forEach(btn => {
@@ -387,11 +490,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         renderPOSTiles();
+        
+        // --- SELLER SELECTION ---
+        window.app.setSeller = (type) => {
+            const btnCompany = document.getElementById('btn-seller-company');
+            const btnPersonal = document.getElementById('btn-seller-personal');
+            const hiddenInput = document.getElementById('pos-worker-invoice');
+
+            if (!btnCompany || !btnPersonal || !hiddenInput) return;
+
+            if (type === 'COMPANY') {
+                btnCompany.classList.add('active');
+                btnPersonal.classList.remove('active');
+                hiddenInput.value = 'false';
+            } else {
+                btnCompany.classList.remove('active');
+                btnPersonal.classList.add('active');
+                hiddenInput.value = 'true';
+                
+                // Warn if profile is incomplete
+                if (currentUser && (!currentUser.nip || !currentUser.address)) {
+                    showToast('⚠️ Twój profil jest niepełny (brak NIP lub adresu). Uzupełnij dane w Ustawieniach!', 'warning');
+                }
+            }
+        };
 
         // Default "Worker Invoice" for non-admins (Employer Invoice)
         if (currentUser.role !== 'ADMIN') {
-            const workerInv = document.getElementById('pos-worker-invoice');
-            if (workerInv) workerInv.checked = true;
+            window.app.setSeller('PERSONAL');
+        } else {
+            window.app.setSeller('COMPANY');
         }
     }
 
@@ -465,6 +593,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnGenerate.onclick = async () => {
             if (selectedItems.length === 0) return alert('Koszyk jest pusty! Dodaj przynajmniej jeden produkt.');
             
+
+
             const payload = {
                 document_type: currentType,
                 payment_method: currentPayment,
@@ -474,17 +604,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 include_rights_clause: document.getElementById('pos-rights-clause').checked,
                 include_qr_code: document.getElementById('pos-qr-code').checked,
                 items: selectedItems,
+                metadata: null,
+                delivery_comment: document.getElementById('pos-delivery-comment')?.value || '',
+                lat: parseFloat(document.getElementById('pos-lat')?.value) || null,
+                lng: parseFloat(document.getElementById('pos-lng')?.value) || null,
                 new_client_data: {
                     name: document.getElementById('pos-client-name').value,
                     nip: document.getElementById('pos-client-nip').value,
                     id_type: window.app.currentPosIdType || 'NIP',
                     address: document.getElementById('pos-client-address').value
                 },
-                is_worker_invoice: document.getElementById('pos-worker-invoice')?.checked || false
+                is_worker_invoice: document.getElementById('pos-worker-invoice')?.value === 'true'
             }
 
             if (!payload.new_client_data.name && currentType !== 'PARAGON') {
-                return alert(`Dane odbiorcy (Nazwa) sÄ… wymagane dla dokumentu typu: ${currentType}. ProszÄ™ uzupeĹ‚niÄ‡ formularz.`);
+                return alert(`Dane nabywcy są wymagane dla dokumentu typu: ${currentType}. Proszę uzupełnić formularz.`);
             }
 
             const method = editingInvoiceId ? 'PUT' : 'POST';
@@ -583,6 +717,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (input) {
                 if (input.type === 'radio') {
                     if (input.value === val) input.checked = true;
+                } else if (input.type === 'checkbox') {
+                    input.checked = (val === 'true' || val === true);
                 } else {
                     input.value = val;
                 }
@@ -625,6 +761,9 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData);
+            
+
+
             await apiFetch('config', 'POST', data);
             alert('Konfiguracja zapisana pomyślnie!');
             loadDashboard();
@@ -677,6 +816,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (userStudioSel) userStudioSel.innerHTML = studioOpts;
         if (editUserStudioSel) editUserStudioSel.innerHTML = studioOpts;
 
+        // Render Studios List in the new dedicated tab
+        const studioContainer = document.getElementById('studios-list-container');
+        if (studioContainer) {
+            studioContainer.innerHTML = studios.map(s => `
+                <div class="card" style="padding: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
+                    <div>
+                        <strong>${s.name}</strong><br>
+                        <small style="color: var(--text-secondary);">${s.address || 'Brak adresu'}</small>
+                    </div>
+                    <button class="btn btn-danger btn-sm" onclick="window.app.deleteStudio(${s.id})" title="Usuń Lokal">🗑️</button>
+                </div>
+            `).join('') || '<p style="color:var(--text-secondary);">Brak dodanych lokali.</p>';
+        }
+
         window.app.activeAdminUsers = users; // save it for edit modal lookup
 
         // Render Users
@@ -707,14 +860,18 @@ document.addEventListener('DOMContentLoaded', () => {
         `).join('');
     }
 
-    const formAddStudio = document.getElementById('form-add-studio');
-    if (formAddStudio) {
-        formAddStudio.onsubmit = async (e) => {
+    const formAddStudioFull = document.getElementById('form-add-studio-full');
+    if (formAddStudioFull) {
+        formAddStudioFull.onsubmit = async (e) => {
             e.preventDefault();
-            const name = document.getElementById('add-studio-name').value;
-            const res = await apiFetch('studios', 'POST', { name });
+            const data = {
+                name: document.getElementById('s-name').value,
+                address: document.getElementById('s-address').value,
+                bank_account: document.getElementById('s-account').value
+            };
+            const res = await apiFetch('studios', 'POST', data);
             if (res.success) {
-                showToast('Studio dodane', 'success');
+                showToast('Nowy lokal dodany!', 'success');
                 e.target.reset();
                 await loadAdminUi();
             }
@@ -832,7 +989,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.app.deleteStudio = async (id) => {
         if (!confirm('Na pewno usunąć studio? Rekordy zostaną osierocone (NULL).')) return;
         const res = await apiFetch(`studios/${id}`, 'DELETE');
-        if (res.success) loadAdminUi();
+        if (res.success) {
+            showToast('Lokal został usunięty.', 'success');
+            loadAdminUi();
+        } else {
+            showToast(res.error || 'Błąd podczas usuwania lokalu.', 'error');
+        }
     };
 
     window.app.deleteUser = async (id) => {
@@ -884,6 +1046,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GLOBALS ---
     Object.assign(window.app, {
         showView,
+        deleteStudio: async (id) => {
+            if (confirm('Czy na pewno chcesz usunąć ten lokal?')) {
+                await apiFetch(`studios/${id}`, 'DELETE');
+                showToast('Lokal usunięty', 'info');
+                await loadAdminUi();
+            }
+        },
+        // --- STUDIO & MAP RESIDUALS REMOVED ---
         openTileAdd: (id) => {
             const p = products.find(prod => prod.id === id);
             document.getElementById('tile-add-name').textContent = p.name;
@@ -942,9 +1112,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const tbody = document.querySelector('#all-invoices-table tbody');
+            const collectiveBtn = document.getElementById('collective-invoice-container');
+            if(collectiveBtn) collectiveBtn.style.display = (currentUser && currentUser.is_florist) ? 'block' : 'none';
             if (tbody) {
                 tbody.innerHTML = filtered.map(inv => `
                     <tr>
+                        <td style="text-align: center;"><input type="checkbox" class="history-checkbox" value="${inv.id}" data-client="${inv.client_id || ''}" data-type="${inv.type}"></td>
                         <td><strong>${inv.number}</strong> <span class="type-badge type-${inv.type.toLowerCase()}">${inv.type}</span></td>
                         <td>${inv.client}</td>
                         <td>${inv.date}</td>
@@ -977,6 +1150,38 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('m-product-sort').value = p.sort_order;
             document.getElementById('m-product-category').value = p.category;
             document.getElementById('modal-product').style.display = 'block';
+        },
+        toggleAllHistoryCheckboxes: (el) => {
+            document.querySelectorAll('.history-checkbox').forEach(cb => {
+                const tr = cb.closest('tr');
+                if(tr && tr.style.display !== 'none') cb.checked = el.checked;
+            });
+        },
+        generateCollectiveInvoice: async () => {
+            const checked = Array.from(document.querySelectorAll('.history-checkbox:checked'));
+            if(checked.length === 0) return alert('Zaznacz przynajmniej jedno zamówienie!');
+            
+            const clientIds = new Set();
+            let allOrders = true;
+            checked.forEach(cb => {
+                if(cb.dataset.client) clientIds.add(cb.dataset.client);
+                if(cb.dataset.type !== 'ZAMOWIENIE') allOrders = false;
+            });
+            
+            if(!allOrders) return alert('Zbiorczą fakturę można wygenerować tylko z ZAMÓWIEŃ.');
+            if(clientIds.size > 1) return alert('Wszystkie zamówienia muszą być dla tego samego klienta!');
+            
+            const ids = checked.map(cb => cb.value);
+            if(confirm('Czy wygenerować fakturę zbiorczą FAKTURA dla zaznaczonych zamówień?')) {
+                 const res = await apiFetch('invoices/collective', 'POST', { invoice_ids: ids });
+                 if(res.success) {
+                     alert('Wygenerowano fakturę zbiorczą!');
+                     if(res.pdf_url) window.open(res.pdf_url, '_blank');
+                     loadInvoices();
+                 } else {
+                     alert(res.error || 'Błąd generowania faktury zbiorczej.');
+                 }
+            }
         },
         deleteProduct: async (id) => {
             if (confirm('UsunÄ…Ä‡ produkt?')) {
@@ -1067,7 +1272,197 @@ document.addEventListener('DOMContentLoaded', () => {
             renderPOSItems();
         },
 
+        // --- STUDIO & MAP RESIDUALS REMOVED ---
+
+        initOrdersMap: () => {
+             console.log("[NoxLog] Inicjalizacja mapy...");
+             const mapEl = document.getElementById("orders-map");
+             if (!mapEl) return;
+
+             if (typeof L === "undefined") {
+                 console.error("[NoxLog] Biblioteka Leaflet nie została załadowana!");
+                 return;
+             }
+
+             try {
+                 if (!map) {
+                    map = L.map("orders-map").setView([52.237, 21.017], 13);
+                    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                        maxZoom: 19,
+                        attribution: "&copy; OpenStreetMap contributors"
+                    }).addTo(map);
+                 }
+                 
+                 setTimeout(() => {
+                     if (map) map.invalidateSize();
+                 }, 500);
+
+                 window.app.loadOrders();
+             } catch (err) {
+                 console.error("[NoxLog] Błąd Mapy:", err);
+                 if (mapEl) {
+                     mapEl.innerHTML = `<div style="padding: 30px; color: white; background: #c0392b; text-align: center; border-radius: 8px;">
+                        <h3 style="margin-top:0;">❌ Błąd ładowania mapy</h3>
+                        <p>${err.message}</p>
+                     </div>`;
+                 }
+             }
+        },
+
+        loadOrders: async () => {
+            const list = document.getElementById('orders-list');
+            if (!list) return;
+
+            // Clear markers
+            if (map && orderMarkers) {
+                orderMarkers.forEach(m => map.removeLayer(m));
+            }
+            orderMarkers = [];
+
+            console.log("[NoxLog] Pobieranie zamówień...");
+            const orders = await apiFetch('orders');
+            ordersList = orders || [];
+            
+            const couriers = await apiFetch('couriers');
+            
+            // Add Studios (Locals) to map
+            const studios = await apiFetch('studios');
+            if (map && Array.isArray(studios)) {
+                studios.forEach(s => {
+                    if (s.lat && s.lng) {
+                        const m = L.marker([s.lat, s.lng], {
+                            icon: L.divIcon({ 
+                                className: 'map-marker-container studio-marker', 
+                                html: '🏢', 
+                                iconSize: [30, 30] 
+                            })
+                        }).addTo(map);
+                        m.bindPopup(`<strong>${s.name}</strong><br>${s.address}`);
+                        orderMarkers.push(m);
+                    }
+                });
+            }
+
+
+            if (!orders || orders.length === 0) {
+
+                list.innerHTML = '<p style="color:var(--text-secondary); padding: 20px;">Brak aktywnych zamówień.</p>';
+                return;
+            }
+
+            let html = '';
+            orders.forEach(o => {
+                const statusLabels = {
+                    'PENDING': 'Nowe',
+                    'READY': 'Gotowe',
+                    'IN_DELIVERY': 'W Dostawie',
+                    'DELIVERED': 'Dostarczone',
+                    'CANCELLED': 'Anulowane'
+                };
+                const statusClass = `status-${o.status.toLowerCase()}`;
+                
+                html += `
+                    <div class="order-item-card" onclick="window.app.focusOrder(${o.id}, ${o.lat}, ${o.lng})">
+                        <div class="order-header">
+                            <span class="order-number">#${o.number}</span>
+                            <span class="order-status-tag ${statusClass}">${statusLabels[o.status] || o.status}</span>
+                        </div>
+                        <span class="order-address">📍 ${o.address}</span>
+                        <div class="order-meta-row">
+                            <span>Suma: ${o.total.toFixed(2)} zł</span>
+                            <span>${o.date}</span>
+                        </div>
+                        ${o.comment ? `<p style="font-size: 0.75rem; color: var(--accent-color); margin-top: 8px;">💬 ${o.comment}</p>` : ''}
+                        
+                        <!-- Actions for Courier/Admin -->
+                        <div class="courier-actions">
+                            ${o.status === 'PENDING' || o.status === 'READY' ? 
+                                `<button class="btn btn-primary btn-courier" onclick="event.stopPropagation(); window.app.updateOrderStatus(${o.id}, 'IN_DELIVERY')">🚚 Odbierz</button>` : ''}
+                            ${o.status === 'IN_DELIVERY' ? 
+                                `<button class="btn btn-success btn-courier" onclick="event.stopPropagation(); window.app.updateOrderStatus(${o.id}, 'DELIVERED')">✅ Dostarczone</button>` : ''}
+                        </div>
+                    </div>
+                `;
+
+                // Add to Map if has coords
+                if (o.lat && o.lng) {
+                    const markerEmoji = o.status === 'DELIVERED' ? '✅' : (o.status === 'IN_DELIVERY' ? '🚚' : '📦');
+                    const marker = L.marker([o.lat, o.lng], {
+                        icon: L.divIcon({ 
+                            className: 'map-marker-container order-marker-pin', 
+                            html: markerEmoji, 
+                            iconSize: [35, 35] 
+                        })
+                    }).addTo(map);
+                    marker.bindPopup(`
+                        <div style="min-width: 200px;">
+                            <strong>Zamówienie ${o.number}</strong><br>
+                            Klient: ${o.client_name}<br>
+                            Adres: ${o.address}<br>
+                            Status: ${o.status}<br>
+                            
+                            <hr style="margin: 8px 0; border: none; border-top: 1px solid rgba(255,255,255,0.1);">
+                            
+                            <select id="courier-select-${o.id}" style="width:100%; margin-bottom: 5px; padding: 4px; border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color);">
+                                <option value="">-- Wybierz kuriera --</option>
+                                ${(couriers || []).map(c => `<option value="${c.id}" ${c.id === o.courier_id ? 'selected' : ''}>${c.full_name || c.username}</option>`).join('')}
+                            </select>
+                            
+                            <div style="display: flex; gap: 5px; margin-top: 5px;">
+                                <button class="btn btn-primary btn-sm" style="flex: 1; padding: 4px;" onclick="window.app.assignCourier(${o.id})">Przypisz</button>
+                                <button class="btn btn-secondary btn-sm" style="flex: 1; padding: 4px;" onclick="window.app.editInvoice(${o.id})">Edytuj</button>
+                            </div>
+                            
+                            <button class="btn btn-success" onclick="window.app.updateOrderStatus(${o.id}, 'DELIVERED')" style="margin-top:5px; width:100%;">Dostarczono</button>
+                        </div>
+                    `);
+                    orderMarkers.push(marker);
+                }
+            });
+            list.innerHTML = html;
+
+            // Fit bounds if markers exist
+            if (map && orderMarkers.length > 0) {
+                const group = new L.featureGroup(orderMarkers);
+                map.fitBounds(group.getBounds().pad(0.1));
+            }
+        },
+
+
+
+        focusOrder: (id, lat, lng) => {
+            if (lat && lng && map) {
+                map.setView([lat, lng], 15);
+            }
+            document.querySelectorAll('.order-item-card').forEach(el => el.classList.remove('active'));
+            // Find the clicked card if possible (index or search)
+        },
+
+        assignCourier: async (id) => {
+            const selectEl = document.getElementById(`courier-select-${id}`);
+            if (!selectEl) return;
+            const courier_id = selectEl.value ? parseInt(selectEl.value) : null;
+            const res = await apiFetch(`orders/${id}/assign`, 'PATCH', { courier_id });
+            if (res.success) {
+                showToast('Kurier został przypisany.', 'success');
+                window.app.loadOrders();
+            } else {
+                showToast(res.error || 'Błąd zapisu', 'error');
+            }
+        },
+
+        updateOrderStatus: async (id, status) => {
+            const res = await apiFetch(`orders/${id}/status`, 'PATCH', { status });
+            if (res.success) {
+                showToast(`Status zmieniony na: ${status}`, 'success');
+                window.app.loadOrders();
+            } else {
+                showToast(res.error, 'error');
+            }
+        },
+
         // --- FINANCE & COSTS ---
+
         loadFinance: async () => {
             const expenses = await apiFetch('expenses');
             const conf = await apiFetch('config');
@@ -1248,7 +1643,7 @@ document.addEventListener('DOMContentLoaded', () => {
             applyModuleVisibility();
             renderModulesSettings();
             showToast(
-                res.is_enabled ? `âś… ModuĹ‚ ${key} wĹ‚Ä…czony` : `âŹ¸ď¸Ź ModuĹ‚ ${key} wyĹ‚Ä…czony`,
+                res.is_enabled ? `✅ Moduł ${key} włączony` : `⚪️ Moduł ${key} wyłączony`,
                 res.is_enabled ? 'success' : 'info'
             );
         } else {
@@ -1259,24 +1654,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- CALENDAR & PROJECTS ---
     async function loadProjects() {
-        const projects = await apiFetch('projects');
         const container = document.getElementById('projects-list-container');
         if (!container) return;
         
-        if (!projects || projects.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-secondary); text-align:center; padding: 20px;">⌛ Ładowanie projektów...</p>';
+        const projects = await apiFetch('projects');
+        if (!projects || projects.error) {
+            container.innerHTML = `<p style="color:#ef4444; text-align:center; padding: 20px;">⚠️ Błąd ładowania: ${projects?.error || 'Serwer nie odpowiada'}</p>`;
+            return;
+        }
+        if (!Array.isArray(projects) || projects.length === 0) {
             container.innerHTML = '<p style="color:var(--text-secondary); text-align:center; padding: 20px;">Brak projektów.</p>';
             return;
         }
         
         let html = '';
         for (let p of projects) {
-            const tasksRes = await apiFetch(`projects/${p.id}/tasks`);
             let tasksHtml = '';
-            if (tasksRes && tasksRes.length > 0) {
-                tasksHtml = tasksRes.map(t => {
+            if (p.tasks && p.tasks.length > 0) {
+                tasksHtml = p.tasks.map(t => {
                     const statusColor = t.status === 'DONE' ? '#10b981' : (t.status === 'IN_PROGRESS' ? '#f59e0b' : '#3b82f6');
-                    
-                    // Render links as dynamic buttons
                     let linksHtml = '';
                     if (t.links && typeof t.links === 'string') {
                         const urls = t.links.split(/[\s,]+/).filter(url => url.trim() !== '');
@@ -1289,17 +1686,16 @@ document.addEventListener('DOMContentLoaded', () => {
                             return `<a href="${url}" target="_blank" class="btn btn-sm" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); padding: 2px 8px; font-size: 0.7rem; color: #fff; margin-right: 5px;">🔗 ${label}</a>`;
                         }).join('');
                     }
-
                     return `
                     <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items:center;">
                         <div style="flex: 1;">
                             <strong>${t.title}</strong>
                             <span style="font-size: 0.7rem; color: ${statusColor}; border: 1px solid ${statusColor}; padding: 1px 6px; border-radius: 12px; margin-left:10px;">${t.status}</span><br>
-                            <div class="formatted-markdown" style="font-size: 0.85rem; color: #d1d5db; margin: 4px 0;">${marked.parse(t.description || '*Brak opisu*')}</div>
+                            <div class="formatted-markdown" style="font-size: 0.85rem; color: #d1d5db; margin: 4px 0;">${window.marked ? marked.parse(t.description || '*Brak opisu*') : (t.description || 'Brak opisu')}</div>
                             <span style="font-size: 0.8rem; color: var(--text-secondary);">Deadline: ${t.deadline || 'Brak'} | Przypisany: ${t.assigned_user_name || 'Brak'}</span>
                             <div style="margin-top: 6px;">${linksHtml}</div>
                         </div>
-                        ${(currentUser.role === 'ADMIN' || currentUser.can_manage_projects) ? `
+                        ${(currentUser?.role === 'ADMIN' || currentUser?.can_manage_projects) ? `
                             <div style="display: flex; gap: 5px; margin-left: 10px;">
                                 <button class="btn btn-secondary btn-sm" onclick="window.app.editTask(${t.id}, ${p.id})" title="Edytuj">✏️</button>
                                 <button class="btn btn-danger btn-sm" onclick="window.app.deleteTask(${t.id})" title="Usuń">🗑️</button>
@@ -1307,52 +1703,264 @@ document.addEventListener('DOMContentLoaded', () => {
                         ` : ''}
                     </div>`;
                 }).join('');
-            } else {
-                tasksHtml = '<p style="font-size:0.8rem; color:var(--text-secondary);">Brak zadań w tym projekcie.</p>';
             }
             
             html += `
-                <div style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden;">
-                    <div style="background: rgba(255,255,255,0.05); padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color);">
+                <div class="project-item-card" style="border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; margin-bottom: 10px;">
+                    <div class="project-row-header" data-id="${p.id}" style="background: rgba(255,255,255,0.05); padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color);">
                         <div>
                             <h4 style="margin: 0; color: #fff;">${p.name}</h4>
-                            <span style="font-size: 0.8rem; color: var(--text-secondary);">Klient: ${p.client} | Przypisany: ${p.assigned_user_name || 'Brak'}</span>
+                            <span style="font-size: 0.8rem; color: var(--text-secondary);">Klient: ${p.client} | Status: <span class="status-badge" style="background: rgba(124, 77, 255, 0.2); color: var(--accent-light); border: 1px solid var(--accent-color);">${p.status}</span></span>
                         </div>
                         <div style="display: flex; gap: 5px;">
-                            ${(currentUser.role === 'ADMIN' || currentUser.can_manage_projects) ? `
+                            ${(currentUser?.role === 'ADMIN' || currentUser?.can_manage_projects) ? `
                                 <button class="btn btn-primary btn-sm" onclick="window.app.openTaskForm(${p.id})">➕ Zadanie</button>
+                                <button class="btn btn-accent btn-sm" onclick="event.stopPropagation(); window.app.copyBriefLink(${p.id}, '${p.public_token}')" style="background: var(--accent-color); border: none;">🔗 ${p.public_token ? 'Kopiuj Brief' : 'Brief Link'}</button>
                                 <button class="btn btn-danger btn-sm" onclick="window.app.deleteProject(${p.id})" title="Usuń Projekt">🗑️</button>
                             ` : ''}
                         </div>
                     </div>
                     <div style="padding: 15px;">
+                        ${(() => {
+                            let bd = p.brief_data;
+                            if (typeof bd === 'string') { try { bd = JSON.parse(bd); } catch(e) { bd = null; } }
+                            if (!bd) return '';
+                            
+                            return `
+                            <div style="background: rgba(124, 77, 255, 0.1); border: 1px solid var(--accent-color); padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.9rem;">
+                                <strong style="color: var(--accent-color);">📋 Audio Brief:</strong><br>
+                                <strong>Typ:</strong> ${bd.type || 'N/A'}<br>
+                                <strong>Tech:</strong> BPM: ${bd.bpm || '?'}, Tonacja: ${bd.key || '?'}, SR: ${bd.sample_rate || '?'} kHz<br>
+                                <strong>Vibe:</strong> ${bd.vibe || 'Brak opisu'}<br>
+                                <strong>Pliki:</strong> <a href="${bd.links}" target="_blank" style="color: #fff; text-decoration: underline;">Otwórz sesję</a>
+                            </div>
+                            `;
+                        })()}
                         ${tasksHtml}
                     </div>
                 </div>
             `;
         }
         container.innerHTML = html;
+        
+        // Add click listener to project rows to open detail
+        container.querySelectorAll('.project-row-header').forEach(row => {
+            row.style.cursor = 'pointer';
+            row.onclick = () => {
+                const id = row.dataset.id;
+                window.app.openProjectDetail(id);
+            };
+        });
+    }
+
+    async function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            // Fallback for non-https or old browsers
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try { document.execCommand('copy'); } catch (err) { console.error('Clipboard fallback error', err); }
+            document.body.removeChild(textArea);
+        }
     }
     
-    window.app.openProjectForm = async () => {
-        document.getElementById('form-project').reset();
-        document.getElementById('p-id').value = '';
+    window.app.copyBriefLink = async (id, token) => {
+        if (!token || token === 'null' || token === 'undefined') {
+            const res = await apiFetch(`projects/${id}/generate-token`, 'POST');
+            if (res.success) {
+                const url = `${window.location.origin}/brief/${res.token}`;
+                copyToClipboard(url);
+                showToast('Link wygenerowany i skopiowany!', 'success');
+                loadProjects();
+            } else {
+                showToast('Błąd: ' + res.error, 'error');
+            }
+        } else {
+            const url = `${window.location.origin}/brief/${token}`;
+            copyToClipboard(url);
+            showToast('Link skopiowany do schowka!', 'info');
+        }
+    };
+
+    let currentDetailProjectId = null;
+    let detailSaveTimeout = null;
+
+    window.app.openProjectDetail = async (id) => {
+        currentDetailProjectId = id;
+        showView('project-detail');
+        
+        const p = await apiFetch(`projects/${id}`);
+        if (!p) {
+            showToast('Błąd ładowania projektu', 'error');
+            showView('projects');
+            return;
+        }
+
+        document.getElementById('pd-title').textContent = p.name;
+        
+        // Fill Side Panel
+        document.getElementById('pd-c-name').value = p.client?.name || '';
+        document.getElementById('pd-c-phone').value = p.client?.phone || '';
+        document.getElementById('pd-c-email').value = p.client?.email || '';
+        document.getElementById('pd-c-company').value = p.client?.company_name || '';
+        document.getElementById('pd-c-nip').value = p.client?.nip || '';
+        document.getElementById('pd-c-address').value = p.client?.address || '';
+        document.getElementById('pd-c-discord').value = p.client?.discord_id || '';
+        document.getElementById('pd-internal-notes').value = p.internal_notes || '';
+        
+        // Render Tasks
+        window.app.renderProjectDetailTasks(p);
+
+        // Sidebar Brief Summary
+        const briefContainer = document.getElementById('pd-brief-summary');
+        let bd = p.brief_data;
+        if (typeof bd === 'string') { try { bd = JSON.parse(bd); } catch(e) { bd = null; } }
+        
+        if (bd) {
+            briefContainer.style.display = 'block';
+            briefContainer.innerHTML = `
+                <h4 style="color: var(--accent-light);">🎙️ Audio Brief Detail</h4>
+                <div style="font-size: 0.85rem; line-height: 1.4; color: var(--text-secondary); display: flex; flex-direction: column; gap: 8px;">
+                    <div><strong>Typ:</strong> ${bd.type}</div>
+                    <div><strong>Tech:</strong> ${bd.bpm} BPM | ${bd.key} | ${bd.sample_rate} kHz</div>
+                    <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        <span style="display:block; font-weight: 600; font-size: 0.75rem; color: var(--accent-light);">VIBE:</span>
+                        ${bd.vibe || 'Brak opisu'}
+                    </div>
+                    <div><strong>Segmenty:</strong> ${bd.segment_notes || 'Brak specyficznych uwag'}</div>
+                    <div style="color: #f59e0b;"><strong>Deadline:</strong> ${bd.deadline || 'Brak'}</div>
+                    <div style="margin-top: 5px;">
+                        <a href="${bd.links}" target="_blank" class="btn btn-primary btn-sm" style="width:100%; text-align:center;">📂 Otwórz Pliki</a>
+                    </div>
+                </div>
+            `;
+        } else {
+            briefContainer.style.display = 'none';
+        }
+
+        // Add task button
+        document.getElementById('pd-add-task-btn').onclick = () => {
+            window.app.openTaskForm(id);
+        };
+    };
+
+    window.app.renderProjectDetailTasks = async (p) => {
+        const tasks = await apiFetch(`projects/${p.id}/tasks`);
+        const container = document.getElementById('pd-tasks-container');
+        if (!tasks || tasks.length === 0) {
+            container.innerHTML = '<p style="color: var(--text-secondary); text-align: center; padding: 40px; border: 2px dashed var(--border-color); border-radius: 12px;">Brak zadań w tym projekcie.</p>';
+            return;
+        }
+
+        container.innerHTML = tasks.map(t => {
+            const statusColor = t.status === 'DONE' ? '#10b981' : (t.status === 'IN_PROGRESS' ? '#f59e0b' : '#3b82f6');
+            return `
+                <div class="card" style="background: rgba(255,255,255,0.03); border-left: 5px solid ${statusColor}; margin-bottom: 5px;">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                <h4 style="margin: 0;">${t.title}</h4>
+                                <span style="font-size: 0.7rem; color: ${statusColor}; border: 1px solid ${statusColor}; padding: 2px 8px; border-radius: 12px; font-weight: 600;">${t.status}</span>
+                            </div>
+                            <div class="formatted-markdown" style="font-size: 0.9rem; color: #d1d5db; line-height: 1.5;">${marked.parse(t.description || '*Bez opisu*')}</div>
+                            <div style="margin-top: 10px; font-size: 0.8rem; color: var(--text-secondary); display: flex; gap: 20px;">
+                                <span>📅 Deadline: ${t.deadline || 'Brak'}</span>
+                                <span>👤 Osoba: ${t.assigned_user_name || 'Nieprzypisane'}</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn btn-secondary btn-sm" onclick="window.app.editTask(${t.id}, ${p.id})">✏️</button>
+                            <button class="btn btn-danger btn-sm" onclick="window.app.deleteTask(${t.id})">🗑️</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    };
+
+    // Auto-save logic
+    const triggerDetailSave = () => {
+        const statusEl = document.getElementById('pd-notes-status');
+        if (statusEl) {
+            statusEl.textContent = '⏳ Zapisywanie...';
+            statusEl.style.opacity = '1';
+        }
+        
+        clearTimeout(detailSaveTimeout);
+        detailSaveTimeout = setTimeout(async () => {
+            const data = {
+                internal_notes: document.getElementById('pd-internal-notes').value,
+                client_name: document.getElementById('pd-c-name').value,
+                client_phone: document.getElementById('pd-c-phone').value,
+                client_email: document.getElementById('pd-c-email').value,
+                client_company: document.getElementById('pd-c-company').value,
+                client_nip: document.getElementById('pd-c-nip').value,
+                client_address: document.getElementById('pd-c-address').value,
+                client_discord: document.getElementById('pd-c-discord').value
+            };
+            
+            const res = await apiFetch(`projects/${currentDetailProjectId}/full-update`, 'PATCH', data);
+            if (res.success) {
+                if (statusEl) {
+                    statusEl.textContent = '✓ Zapisano';
+                    setTimeout(() => { statusEl.style.opacity = '0'; }, 2000);
+                }
+            } else {
+                if (statusEl) statusEl.textContent = '❌ Błąd zapisu';
+            }
+        }, 1000);
+    };
+
+    // Attach listeners for auto-save
+    ['pd-internal-notes'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.oninput = triggerDetailSave;
+    });
+    
+    document.addEventListener('input', (e) => {
+        if (e.target.classList.contains('pd-client-input')) {
+            triggerDetailSave();
+        }
+    });
+
+    window.app.openProjectForm = async (id = null) => {
+        const form = document.getElementById('form-project');
+        if (form) form.reset();
+        document.getElementById('p-id').value = id || '';
         
         const clients = await apiFetch('clients');
+        const dl = document.getElementById('clients-datalist');
+        if (dl) {
+            dl.innerHTML = clients.map(c => `<option value="${c.name}">`).join('');
+        }
         
-        // Safely fetch users (Producer/Admin can fetch users usually)
+        // Safely fetch users
         let users = [];
         try {
             users = await apiFetch('users/list');
             if (users.error) users = [];
         } catch (e) { users = []; }
         
-        const cSel = document.getElementById('p-client');
-        cSel.innerHTML = clients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        
         const uSel = document.getElementById('p-assigned');
-        uSel.innerHTML = '<option value="">Brak</option>' + users.map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+        if (uSel) {
+            uSel.innerHTML = '<option value="">Brak</option>' + users.map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+        }
         
+        if (id) {
+            const p = await apiFetch(`projects/${id}`);
+            document.getElementById('p-name').value = p.name;
+            document.getElementById('p-desc').value = p.description;
+            document.getElementById('p-client-name').value = (p.client && p.client.name) ? p.client.name : (typeof p.client === 'string' ? p.client : '');
+            document.getElementById('p-assigned').value = p.assigned_user_id || '';
+        }
+
         document.getElementById('modal-project-form').style.display = 'block';
     };
 
@@ -1362,9 +1970,10 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const id = document.getElementById('p-id').value;
             const payload = {
-                client_id: document.getElementById('p-client').value,
+                client_name: document.getElementById('p-client-name').value,
                 name: document.getElementById('p-name').value,
                 description: document.getElementById('p-desc').value,
+                deadline: null,
                 assigned_user_id: document.getElementById('p-assigned').value || null
             };
             const res = await apiFetch(id ? `projects/${id}` : 'projects', id ? 'PUT' : 'POST', payload);
@@ -1471,6 +2080,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await apiFetch(endpoint, method, payload);
             if (res.success) {
                 document.getElementById('modal-task-form').style.display = 'none';
+                if (currentDetailProjectId == projectId) {
+                    window.app.renderProjectDetailTasks({id: projectId});
+                }
                 loadProjects();
             } else {
                 showToast(res.error, 'error');
@@ -1494,6 +2106,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await apiFetch(`tasks/${id}`, 'DELETE');
         if (res.success) {
             showToast('Zadanie usunięte');
+            if (currentDetailProjectId) {
+                window.app.renderProjectDetailTasks({id: currentDetailProjectId});
+            }
             loadProjects();
         } else {
             showToast(res.error, 'error');
@@ -1592,7 +2207,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // For now, if ID exists, we delete and re-create or just say "not implemented"
             // Let's implement UPDATE route in app.py or just use the current POST as "SAVE"
             
-            const res = await apiFetch('calendar', { method, body: JSON.stringify(data) });
+            const res = await apiFetch('calendar', 'POST', data);
             if (res.success) {
                 if (id) await apiFetch(`calendar/${id}`, { method: 'DELETE' }); // Simple update-via-replace
                 document.getElementById('modal-calendar-event').style.display = 'none';
@@ -1661,10 +2276,15 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(loadModules)
         .then(() => {
             const u = currentUser;
-            if (u.must_change_password) {
+            if (u && u.must_change_password) {
                 showView('settings');
                 return;
             }
+            if (!u) {
+                console.log("No user session, stay on dashboard or redirect to login.");
+                return;
+            }
+
             
             // Navigate to the first view the user has permission to see
             if (u.role === 'ADMIN' || u.can_access_dashboard) {
@@ -1705,18 +2325,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeTab = document.querySelector('#settings-tabs .tab-btn.active') || tabs[0];
         if (activeTab) activeTab.click();
 
-        // Hide admin-only tabs if not admin
-        if (currentUser && currentUser.role !== 'ADMIN') {
+        // Hide admin-only tabs if not admin and No settings permission
+        const isAdminOrManager = currentUser && (currentUser.role === 'ADMIN' || currentUser.can_access_settings);
+        if (!isAdminOrManager) {
             document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
-            // If the currently active tab is admin-only, switch to the first visible one
-            const activeTab = document.querySelector('#settings-tabs .tab-btn.active');
-            if (activeTab && activeTab.classList.contains('admin-only')) {
-                const firstVisible = document.querySelector('#settings-tabs .tab-btn:not(.admin-only)');
-                if (firstVisible) firstVisible.click();
+            // If the currently active tab is admin-only, switch to 'user-profile'
+            const activeTabButton = document.querySelector('#settings-tabs .tab-btn.active');
+            if (activeTabButton && activeTabButton.classList.contains('admin-only')) {
+                const profileTab = document.querySelector('#settings-tabs .tab-btn[data-tab="user-profile"]');
+                if (profileTab) profileTab.click();
             }
         } else {
             document.querySelectorAll('.admin-only').forEach(el => el.style.display = '');
         }
+
+        // Force 'user-profile' if must change password
+        if (currentUser && currentUser.must_change_password) {
+             const profileTab = document.querySelector('#settings-tabs .tab-btn[data-tab="user-profile"]');
+             if (profileTab && !profileTab.classList.contains('active')) profileTab.click();
+        }
+
     }
 
     async function loadProfile(userSource = null) {
@@ -1824,5 +2452,182 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gNip) gNip.style.display = type === 'NIP' ? 'block' : 'none';
         if (gPesel) gPesel.style.display = type === 'PESEL' ? 'block' : 'none';
     };
+
+    // 🕒 TIME TRACKING SYSTEM
+    const btnTimeTracking = document.getElementById('btn-time-tracking');
+    if (btnTimeTracking) {
+        btnTimeTracking.onclick = () => window.app.openTimeLogModal();
+    }
+
+    window.app.openTimeLogModal = async () => {
+        const today = new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD
+        document.getElementById('tl-date').value = today;
+        document.getElementById('modal-time-log').style.display = 'block';
+        await window.app.loadTimeLogs();
+    };
+
+    window.app.loadTimeLogs = async () => {
+        const logs = await apiFetch('time-logs');
+        const tbody = document.querySelector('#time-logs-table tbody');
+        if (tbody) {
+            tbody.innerHTML = logs.map(l => `
+                <tr>
+                    <td>${l.date}</td>
+                    <td>${l.start}-${l.end}</td>
+                    <td style="font-weight: bold;">${l.duration}h</td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" onclick="window.app.deleteTimeLog(${l.id})">🗑️</button>
+                    </td>
+                </tr>
+            `).join('') || '<tr><td colspan="4" style="text-align:center;">Brak wpisów</td></tr>';
+        }
+        
+        // Update badge (today only)
+        const todayStr = new Date().toLocaleDateString('sv-SE');
+        const todaySum = logs.filter(l => l.date === todayStr).reduce((sum, l) => sum + (parseFloat(l.duration) || 0), 0);
+        const badge = document.getElementById('today-hours-badge');
+        if (badge) {
+            if (todaySum > 0) {
+                badge.textContent = todaySum.toFixed(1) + 'h';
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    };
+
+    const formTimeLog = document.getElementById('form-time-log');
+    if (formTimeLog) {
+        formTimeLog.onsubmit = async (e) => {
+            e.preventDefault();
+            const payload = {
+                date: document.getElementById('tl-date').value,
+                start: document.getElementById('tl-start').value,
+                end: document.getElementById('tl-end').value
+            };
+            const res = await apiFetch('time-logs', 'POST', payload);
+            if (res.success) {
+                showToast('Godziny zapisane!', 'success');
+                window.app.loadTimeLogs();
+                formTimeLog.reset();
+                document.getElementById('tl-date').value = new Date().toLocaleDateString('sv-SE');
+            } else {
+                showToast(res.error, 'error');
+            }
+        };
+    }
+
+    window.app.deleteTimeLog = async (id) => {
+        if (!confirm('Czy na pewno chcesz usunąć ten wpis?')) return;
+        const res = await apiFetch(`time-logs/${id}`, 'DELETE');
+        if (res.success) {
+            showToast('Usunięto wpis.', 'info');
+            window.app.loadTimeLogs();
+        }
+    };
+
+    // ADMIN TIME TRACKING
+    window.app.loadAdminTimeSummary = async () => {
+        const summary = await apiFetch('admin/time-logs');
+        const tbody = document.getElementById('admin-time-logs-list');
+        if (tbody) {
+            tbody.innerHTML = summary.map(s => `
+                <tr>
+                    <td><strong>${s.display_name}</strong><br><small>${s.username}</small></td>
+                    <td style="font-size: 1.1rem; color: var(--accent-color); font-weight: bold;">${s.total_month} h</td>
+                    <td style="text-align: right;">
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openAdminTimeModal(${s.user_id}, '${s.display_name}')" title="Szczegóły i Edycja">✏️ Podgląd / Edycja</button>
+                        <button class="btn btn-accent btn-sm" onclick="window.app.generateInstantReport(${s.user_id})" title="Raport Instant na Discord">⚡ Wyślij Raport</button>
+                    </td>
+                </tr>
+            `).join('') || '<tr><td colspan="3">Brak danych</td></tr>';
+        }
+    };
+
+    window.app.openAdminTimeModal = async (userId, userName) => {
+        document.getElementById('admin-tl-user-id').value = userId;
+        document.getElementById('admin-tl-user-title').textContent = `Zarządzanie Czasem: ${userName}`;
+        const today = new Date().toLocaleDateString('sv-SE');
+        document.getElementById('admin-tl-date').value = today;
+        document.getElementById('modal-admin-time').style.display = 'block';
+        await window.app.loadAdminTimeLogs(userId);
+    };
+
+    window.app.loadAdminTimeLogs = async (userId) => {
+        const logs = await apiFetch(`admin/time-logs/${userId}`);
+        const tbody = document.querySelector('#admin-time-logs-table tbody');
+        if (tbody) {
+            tbody.innerHTML = logs.map(l => `
+                <tr>
+                    <td>${l.date}</td>
+                    <td>${l.start}-${l.end}</td>
+                    <td>${l.duration}h</td>
+                    <td style="font-size: 0.8rem; opacity: 0.7;">${l.creator}</td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" onclick="window.app.deleteAdminTimeLog(${l.id}, ${userId})">🗑️</button>
+                    </td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" style="text-align:center;">Brak wpisów</td></tr>';
+        }
+    };
+
+    const formAdminTimeLog = document.getElementById('form-admin-time-log');
+    if (formAdminTimeLog) {
+        formAdminTimeLog.onsubmit = async (e) => {
+            e.preventDefault();
+            const userId = document.getElementById('admin-tl-user-id').value;
+            const payload = {
+                date: document.getElementById('admin-tl-date').value,
+                start: document.getElementById('admin-tl-start').value,
+                end: document.getElementById('admin-tl-end').value
+            };
+            const res = await apiFetch(`admin/time-logs/${userId}`, 'POST', payload);
+            if (res.success) {
+                showToast('Wpis dodany przez Admina!', 'success');
+                window.app.loadAdminTimeLogs(userId);
+                window.app.loadAdminTimeSummary();
+                formAdminTimeLog.reset();
+                document.getElementById('admin-tl-date').value = new Date().toLocaleDateString('sv-SE');
+            } else {
+                showToast(res.error, 'error');
+            }
+        };
+    }
+
+    window.app.deleteAdminTimeLog = async (id, userId) => {
+        if (!confirm('Usunąć ten log czasu?')) return;
+        const res = await apiFetch(`time-logs/${id}`, 'DELETE');
+        if (res.success) {
+            window.app.loadAdminTimeLogs(userId);
+            window.app.loadAdminTimeSummary();
+        }
+    };
+
+    window.app.generateInstantReport = async (userId) => {
+        showToast('Generowanie raportu...', 'info');
+        const res = await apiFetch(`admin/reports/instant/${userId}`, 'POST');
+        if (res.success) {
+            showToast('Raport wysłany na Discord!', 'success');
+            if (res.pdf_url) window.open(res.pdf_url, '_blank');
+        } else {
+            showToast(res.error, 'error');
+        }
+    };
+
+    // Update settings tab logic for the new tab
+    const settingsTabs = document.getElementById('settings-tabs');
+    if (settingsTabs) {
+        settingsTabs.addEventListener('click', (e) => {
+            const tab = e.target.closest('.tab-btn');
+            if (tab && tab.dataset.tab === 'time-logs') {
+                window.app.loadAdminTimeSummary();
+            }
+        });
+    }
+
+    // Initial check for hours badge
+    if (document.getElementById('btn-time-tracking')) {
+        window.app.loadTimeLogs();
+    }
 
 });
