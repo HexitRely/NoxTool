@@ -205,14 +205,29 @@ def send_brief_notification(webhook_url, project_data):
         is_secret = project_data.get('is_secret', False)
         color = 15844367 if is_secret else 3447003 # Gold for Secret, Blue for normal
         
+        fields = [
+            {"name": "Klient", "value": project_data['client_name'], "inline": True},
+            {"name": "Typ", "value": f"**{project_data['type']}**", "inline": True},
+            {"name": "Deadline", "value": project_data.get('deadline') or 'Brak', "inline": True},
+        ]
+        
+        if project_data.get('vibe'):
+            fields.append({"name": "🎨 Wizja / Klimat", "value": project_data['vibe'], "inline": False})
+        
+        if project_data.get('references'):
+            fields.append({"name": "🎵 Referencje", "value": project_data['references'], "inline": False})
+        
+        if project_data.get('segment_notes'):
+            fields.append({"name": "⏱️ Uwagi do fragmentów", "value": project_data['segment_notes'], "inline": False})
+        
+        if project_data.get('notes'):
+            fields.append({"name": "📝 Dodatkowe uwagi", "value": project_data['notes'], "inline": False})
+        
+        fields.append({"name": "🔒 Projekt Tajny (NDA)", "value": "TAK - Zakaz publikacji" if is_secret else "NIE", "inline": False})
+        
         embed = {
             "title": f"📁 NOWY BRIEF PROJEKTU: {project_data['name']}",
-            "fields": [
-                {"name": "Klient", "value": project_data['client_name'], "inline": True},
-                {"name": "Typ", "value": f"**{project_data['type']}**", "inline": True},
-                {"name": "Deadline", "value": project_data['deadline'] or 'Brak', "inline": True},
-                {"name": "🔒 Projekt Tajny (NDA)", "value": "TAK - Zakaz publikacji" if is_secret else "NIE", "inline": False}
-            ],
+            "fields": fields,
             "color": color,
             "footer": {"text": "NoxPos - Produkcja"}
         }

@@ -1731,7 +1731,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <strong style="color: var(--accent-color);">📋 Audio Brief:</strong><br>
                                 <strong>Typ:</strong> ${bd.type || 'N/A'}<br>
                                 <strong>Tech:</strong> BPM: ${bd.bpm || '?'}, Tonacja: ${bd.key || '?'}, SR: ${bd.sample_rate || '?'} kHz<br>
-                                <strong>Vibe:</strong> ${bd.vibe || 'Brak opisu'}<br>
+                                <strong>Wizja / Klimat:</strong> ${bd.vibe || 'Brak opisu'}<br>
+                                ${bd.references ? `<strong>Referencje:</strong> ${bd.references}<br>` : ''}
+                                ${bd.segment_notes ? `<strong>Uwagi do fragmentów:</strong> ${bd.segment_notes}<br>` : ''}
+                                ${bd.notes ? `<strong>Dodatkowe uwagi:</strong> ${bd.notes}<br>` : ''}
                                 <strong>Pliki:</strong> <a href="${bd.links}" target="_blank" style="color: #fff; text-decoration: underline;">Otwórz sesję</a>
                             </div>
                             `;
@@ -1828,14 +1831,28 @@ document.addEventListener('DOMContentLoaded', () => {
             briefContainer.innerHTML = `
                 <h4 style="color: var(--accent-light);">🎙️ Audio Brief Detail</h4>
                 <div style="font-size: 0.85rem; line-height: 1.4; color: var(--text-secondary); display: flex; flex-direction: column; gap: 8px;">
-                    <div><strong>Typ:</strong> ${bd.type}</div>
-                    <div><strong>Tech:</strong> ${bd.bpm} BPM | ${bd.key} | ${bd.sample_rate} kHz</div>
+                    <div><strong>Typ:</strong> ${bd.type || 'N/A'}</div>
+                    <div><strong>Tech:</strong> ${bd.bpm || '?'} BPM | ${bd.key || '?'} | ${bd.sample_rate || '?'} kHz</div>
                     <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
-                        <span style="display:block; font-weight: 600; font-size: 0.75rem; color: var(--accent-light);">VIBE:</span>
+                        <span style="display:block; font-weight: 600; font-size: 0.75rem; color: var(--accent-light);">WIZJA / KLIMAT:</span>
                         ${bd.vibe || 'Brak opisu'}
                     </div>
-                    <div><strong>Segmenty:</strong> ${bd.segment_notes || 'Brak specyficznych uwag'}</div>
-                    <div style="color: #f59e0b;"><strong>Deadline:</strong> ${bd.deadline || 'Brak'}</div>
+                    ${bd.references ? `
+                    <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        <span style="display:block; font-weight: 600; font-size: 0.75rem; color: #00d4ff;">🎵 REFERENCJE:</span>
+                        <span style="word-break: break-all;">${bd.references}</span>
+                    </div>` : ''}
+                    ${bd.segment_notes ? `
+                    <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        <span style="display:block; font-weight: 600; font-size: 0.75rem; color: #f59e0b;">⏱️ UWAGI DO FRAGMENTÓW:</span>
+                        ${bd.segment_notes}
+                    </div>` : ''}
+                    ${bd.notes ? `
+                    <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px;">
+                        <span style="display:block; font-weight: 600; font-size: 0.75rem; color: #a0a0a8;">📝 DODATKOWE UWAGI:</span>
+                        ${bd.notes}
+                    </div>` : ''}
+                    <div style="color: #f59e0b;"><strong>⏰ Deadline:</strong> ${bd.deadline || 'Brak'}</div>
                     <div style="margin-top: 5px;">
                         <a href="${bd.links}" target="_blank" class="btn btn-primary btn-sm" style="width:100%; text-align:center;">📂 Otwórz Pliki</a>
                     </div>

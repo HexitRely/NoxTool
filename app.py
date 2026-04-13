@@ -1914,6 +1914,10 @@ def submit_public_brief(token):
             "client_name": project.client.name if project.client else "Brak danych",
             "type": data.get('type', 'Nieokreślony'),
             "deadline": data.get('deadline'),
+            "vibe": data.get('vibe'),
+            "references": data.get('references'),
+            "segment_notes": data.get('segment_notes'),
+            "notes": data.get('notes'),
             "is_secret": data.get('is_secret', False)
         })
     
