@@ -2209,7 +2209,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const res = await apiFetch('calendar', 'POST', data);
             if (res.success) {
-                if (id) await apiFetch(`calendar/${id}`, { method: 'DELETE' }); // Simple update-via-replace
+                if (id) await apiFetch(`calendar/${id}`, 'DELETE'); // Simple update-via-replace
                 document.getElementById('modal-calendar-event').style.display = 'none';
                 loadCalendar();
                 showToast('Wydarzenie zapisane');
@@ -2221,7 +2221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const id = document.getElementById('cal-ev-id').value;
         if (!id) return;
         if (confirm('Czy na pewno usunąć to wydarzenie?')) {
-            const res = await apiFetch(`calendar/${id}`, { method: 'DELETE' });
+            const res = await apiFetch(`calendar/${id}`, 'DELETE');
             if (res.success) {
                 document.getElementById('modal-calendar-event').style.display = 'none';
                 loadCalendar();

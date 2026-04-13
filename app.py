@@ -73,14 +73,21 @@ PUBLIC_PATHS = {'/login', '/api/auth/login', '/static'}
 
 @app.before_request
 def require_login_globally():
+    # Allow public access to login, static files, and brief forms
     if request.path == '/login' or request.path.startswith('/static'):
         return None
     if request.path == '/api/auth/login':
         return None
+    
+    # [Brief Independence] Allow public access to brief forms and submission API
+    if request.path.startswith('/brief/') or request.path.startswith('/api/public/brief/'):
+        return None
+
     if not current_user.is_authenticated:
         if request.path.startswith('/api/'):
             return jsonify({'error': 'Unauthorized', 'login_required': True}), 401
         return redirect('/login')
+
 
     # Force profile/password update logic
     if current_user.is_authenticated and current_user.must_change_password:
@@ -2171,7 +2178,7 @@ def get_calendar():
             "date": e.date.strftime('%Y-%m-%d'),
             "is_public": e.is_public,
             "username": e.user.username if e.user else 'Brak',
-            "is_mine": e.user_id == current_user.id
+            "is_mine": (e.user_id == current_user.id or current_user.role == 'ADMIN')
         })
             
     return jsonify(res)
