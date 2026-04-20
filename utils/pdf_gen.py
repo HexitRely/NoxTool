@@ -98,11 +98,13 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
     c.setFont(FONT_NAME, 10)
     c.drawRightString(190*mm, height - 26*mm, f"Typ dokumentu: {friendly_type}")
     c.drawRightString(190*mm, height - 31*mm, f"Data wystawienia: {invoice_data['date']}")
-    c.drawRightString(190*mm, height - 36*mm, f"Miejsce wystawienia: {my_data['city']}")
     
     # Seller
     is_worker = invoice_data.get('is_worker_invoice', False)
     seller_data = invoice_data.get('worker_details', {}) if is_worker else my_data
+    
+    seller_city = seller_data.get('city', my_data['city'])
+    c.drawRightString(190*mm, height - 36*mm, f"Miejsce wystawienia: {seller_city}")
     
     c.setFont(FONT_NAME, 12)
     c.drawString(20*mm, height - 50*mm, "SPRZEDAWCA:")
@@ -112,13 +114,14 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
     # Handle NIP or PESEL for Seller
     seller_id_type = seller_data.get('id_type', 'NIP')
     seller_id_val = seller_data.get('pesel' if seller_id_type == 'PESEL' else 'nip', '')
-    c.drawString(20*mm, height - 60*mm, f"{seller_id_type}: {seller_id_val}")
+    if seller_id_val and seller_id_val.strip():
+        c.drawString(20*mm, height - 60*mm, f"{seller_id_type}: {seller_id_val}")
     c.drawString(20*mm, height - 65*mm, seller_data['address'])
     
     # Buyer
-    buyer_name = my_data['name'] if is_worker else invoice_data['client_name']
-    buyer_nip = my_data['nip'] if is_worker else invoice_data.get('client_nip', '')
-    buyer_addr = my_data['address'] if is_worker else invoice_data['client_address']
+    buyer_name = invoice_data['client_name']
+    buyer_nip = invoice_data.get('client_nip', '')
+    buyer_addr = invoice_data['client_address']
     
     c.setFont(FONT_NAME, 12)
     c.drawString(110*mm, height - 50*mm, "NABYWCA:")
@@ -128,19 +131,22 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
         c.drawString(110*mm, height - 60*mm, f"NIP: {buyer_nip}")
     c.drawString(110*mm, height - 65*mm, buyer_addr)
     
-    # Metadata (Florist info)
+    # Recipient Info (Metadata)
     metadata = invoice_data.get('metadata', {})
-    if metadata:
+    name_rec = metadata.get('recipient_name', '').strip()
+    addr_rec = metadata.get('recipient_address', '').strip()
+    
+    # Only show if at least name or address is provided and not just "---"
+    has_recipient = (name_rec and name_rec != '---') or (addr_rec and addr_rec != '---')
+    
+    if has_recipient:
         c.setFont(FONT_NAME, 10)
         c.drawString(110*mm, height - 72*mm, "ODBIORCA:")
         c.setFont(FONT_NAME, 9)
-        name_rec = metadata.get('recipient_name', '---')
-        addr_rec = metadata.get('recipient_address', '---')
         phone_rec = metadata.get('recipient_phone', '')
         time_del = metadata.get('time', 'ASAP')
         note = metadata.get('note', '')
 
-        # Combine name and phone
         c.drawString(110*mm, height - 77*mm, f"{name_rec} {phone_rec}")
         c.drawString(110*mm, height - 82*mm, f"Adres: {addr_rec}")
         c.drawString(110*mm, height - 87*mm, f"Czas: {time_del}")
@@ -149,8 +155,8 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
             c.setFont(FONT_NAME, 8)
             c.drawString(20*mm, height - 87*mm, f"BILECIK/NOTATKA: {note}")
         
-        # Adjust table header downward
-        y_table_start = height - 95*mm
+        # Shift table lower to avoid overlap
+        y_table_start = height - 105*mm
     else:
         y_table_start = height - 85*mm
 
@@ -190,15 +196,15 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
         c.drawString(130*mm, y - 5*mm, f"SUMA: {invoice_data['total']:.2f} PLN")
     
     # Payment info
+    account_no = seller_data.get('bank_account', my_data['account']) if is_worker else my_data['account']
     if doc_type not in ['WZ', 'WYCENA']:
         pm = invoice_data.get('payment_method', 'PRZELEW')
         c.setFont(FONT_NAME, 10)
         c.drawString(20*mm, y - 15*mm, f"Forma płatności: {pm.capitalize()}")
         if pm == 'PRZELEW':
-            c.drawString(20*mm, y - 20*mm, f"Numer konta: {my_data['account']}")
+            c.drawString(20*mm, y - 20*mm, f"Numer konta: {account_no}")
     
     qr_path = None
-    account_no = seller_data.get('bank_account', my_data['account']) if is_worker else my_data['account']
     seller_name_for_qr = seller_data['name'] if is_worker else my_data['name']
     
     if invoice_data.get('include_qr_code', True) and doc_type in ['FAKTURA', 'PARAGON'] and invoice_data.get('payment_method') == 'PRZELEW' and account_no:

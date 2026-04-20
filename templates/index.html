@@ -529,10 +529,13 @@
                                 <label>Mój PESEL</label>
                                 <input type="text" id="profile-pesel" placeholder="PESEL">
                             </div>
-                            <div class="form-group" style="grid-column: span 2;">
+                            <div class="form-group">
                                 <label>Mój Adres (do dokumentów)</label>
-                                <input type="text" id="profile-address" placeholder="Miasto, Ulica nr">
-                                <small>Np: Warszawa, ul. Muzyczna 12/4</small>
+                                <input type="text" id="profile-address" placeholder="Ulica nr">
+                            </div>
+                            <div class="form-group">
+                                <label>Moje Miasto (Miejsce wystawienia)</label>
+                                <input type="text" id="profile-city" placeholder="Np: Warszawa">
                             </div>
                              <div class="form-group">
                                  <label>Email Kontaktowy</label>
@@ -633,8 +636,12 @@
                                     <input type="text" id="s-name" placeholder="Np. Studio Centrala" required>
                                 </div>
                                 <div class="form-group">
-                                    <label>Adres Pełny</label>
-                                    <input type="text" id="s-address" placeholder="Ulica, Numer, Kod pocztowy, Miasto">
+                                    <label>Adres (Ulica i Numer)</label>
+                                    <input type="text" id="s-address" placeholder="Np. ul. Muzyczna 12/4">
+                                </div>
+                                <div class="form-group">
+                                    <label>Miasto (Miejsce wystawienia)</label>
+                                    <input type="text" id="s-city" placeholder="Np. Warszawa">
                                 </div>
 
                                 
@@ -691,6 +698,9 @@
                                 <form id="form-add-studio" style="margin-bottom: 20px;">
                                     <div class="form-group">
                                         <input type="text" id="add-studio-name" placeholder="Nazwa Studia" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <input type="text" id="add-studio-city" placeholder="Miasto">
                                     </div>
                                     <button type="submit" class="btn btn-secondary">Dodaj Studio</button>
                                 </form>

@@ -11,8 +11,10 @@ class Studio(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     address = db.Column(db.String(500))
+    city = db.Column(db.String(100))
     # Lat/Lng removed (florist residual)
     bank_account = db.Column(db.String(50))
+
 
 
 # ── NEW: User with RBAC ───────────────────────────────────────────────────────
@@ -49,7 +51,10 @@ class User(db.Model, UserMixin):
     discord_admin_webhook = db.Column(db.String(500))
     discord_contractor_webhook = db.Column(db.String(500))
     address = db.Column(db.String(500))
+    city = db.Column(db.String(100))
     bank_account = db.Column(db.String(100))
+    billing_limit = db.Column(db.Float, default=0.0)
+    billing_limit_type = db.Column(db.String(20), default='DISABLED')
     must_change_password = db.Column(db.Boolean, default=True)
 
     studio = db.relationship('Studio', backref=db.backref('users', lazy=True))
@@ -89,7 +94,10 @@ class User(db.Model, UserMixin):
             'discord_admin_webhook': self.discord_admin_webhook,
             'discord_contractor_webhook': self.discord_contractor_webhook,
             'address': self.address,
+            'city': self.city,
             'bank_account': self.bank_account,
+            'billing_limit': self.billing_limit,
+            'billing_limit_type': self.billing_limit_type,
             'must_change_password': self.must_change_password
         }
 

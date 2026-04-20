@@ -823,7 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="card" style="padding: 12px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.05);">
                     <div>
                         <strong>${s.name}</strong><br>
-                        <small style="color: var(--text-secondary);">${s.address || 'Brak adresu'}</small>
+                        <small style="color: var(--text-secondary);">${s.city || ''} ${s.address || 'Brak adresu'}</small>
                     </div>
                     <button class="btn btn-danger btn-sm" onclick="window.app.deleteStudio(${s.id})" title="Usuń Lokal">🗑️</button>
                 </div>
@@ -867,6 +867,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = {
                 name: document.getElementById('s-name').value,
                 address: document.getElementById('s-address').value,
+                city: document.getElementById('s-city').value,
                 bank_account: document.getElementById('s-account').value
             };
             const res = await apiFetch('studios', 'POST', data);
@@ -2264,6 +2265,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nip: document.getElementById('profile-nip').value,
                 pesel: document.getElementById('profile-pesel').value,
                 address: document.getElementById('profile-address').value,
+                city: document.getElementById('profile-city').value,
                 bank_account: document.getElementById('profile-bank-account').value,
                 id_type: window.app.currentProfileIdType || 'NIP',
                 password: document.getElementById('profile-password').value
@@ -2375,6 +2377,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (document.getElementById('profile-nip')) document.getElementById('profile-nip').value = u.nip || '';
             if (document.getElementById('profile-pesel')) document.getElementById('profile-pesel').value = u.pesel || '';
             if (document.getElementById('profile-address')) document.getElementById('profile-address').value = u.address || '';
+            if (document.getElementById('profile-city')) document.getElementById('profile-city').value = u.city || '';
             if (document.getElementById('profile-bank-account')) document.getElementById('profile-bank-account').value = u.bank_account || '';
             window.app.toggleProfileIdType(u.id_type || 'NIP');
 

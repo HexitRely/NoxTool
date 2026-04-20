@@ -157,6 +157,7 @@ with app.app_context():
     add_column_if_not_exists('product', 'sort_order', 'INTEGER DEFAULT 0')
     # Studio extensions
     add_column_if_not_exists('studio', 'address', 'VARCHAR(500)')
+    add_column_if_not_exists('studio', 'city', 'VARCHAR(100)')
     # lat/lng removed
     add_column_if_not_exists('studio', 'bank_account', 'VARCHAR(50)')
     # Client extensions
@@ -184,6 +185,9 @@ with app.app_context():
     add_column_if_not_exists('user', 'can_manage_tasks', 'BOOLEAN DEFAULT FALSE')
     add_column_if_not_exists('user', 'full_name', 'VARCHAR(100)')
     add_column_if_not_exists('user', 'bank_account', 'VARCHAR(100)')
+    add_column_if_not_exists('user', 'city', 'VARCHAR(100)')
+    add_column_if_not_exists('user', 'billing_limit', 'FLOAT DEFAULT 0.0')
+    add_column_if_not_exists('user', 'billing_limit_type', "VARCHAR(20) DEFAULT 'DISABLED'")
     
     # ── Calendar migration ──
     # If the table doesn't exist, create_all() would have done it, 
@@ -467,6 +471,10 @@ def update_profile():
     if 'pesel' in data: user.pesel = data['pesel']
     if 'id_type' in data: user.id_type = data['id_type']
     if 'address' in data: user.address = data['address']
+    if 'city' in data: user.city = data['city']
+    if 'bank_account' in data: user.bank_account = data['bank_account']
+    if 'billing_limit' in data: user.billing_limit = float(data['billing_limit'] or 0.0)
+    if 'billing_limit_type' in data: user.billing_limit_type = data['billing_limit_type']
     
     # Encryption
     if 'pdf_encryption_enabled' in data: 
@@ -517,8 +525,7 @@ def handle_studios():
         studio = Studio(
             name=data['name'], 
             address=data.get('address', ''), 
-            lat=float(data['lat']) if data.get('lat') else None,
-            lng=float(data['lng']) if data.get('lng') else None,
+            city=data.get('city', ''),
             bank_account=data.get('bank_account', '')
         )
         db.session.add(studio)
@@ -529,8 +536,7 @@ def handle_studios():
         'id': s.id, 
         'name': s.name, 
         'address': s.address, 
-        'lat': s.lat,
-        'lng': s.lng,
+        'city': s.city,
         'bank_account': s.bank_account
     } for s in studios])
 
@@ -566,6 +572,7 @@ def handle_single_studio(id):
     data = request.json
     studio.name = data.get('name', studio.name)
     studio.address = data.get('address', studio.address)
+    studio.city = data.get('city', studio.city)
     studio.bank_account = data.get('bank_account', studio.bank_account)
     db.session.commit()
     return jsonify({'success': True})
@@ -605,7 +612,9 @@ def handle_users():
             can_access_projects=True if data.get('role') == 'ADMIN' else data.get('can_access_projects', False),
             can_manage_projects=True if data.get('role') == 'ADMIN' else data.get('can_manage_projects', False),
             can_manage_tasks=True if data.get('role') == 'ADMIN' else data.get('can_manage_tasks', False),
-            can_create_documents=True if data.get('role') == 'ADMIN' else data.get('can_create_documents', False)
+            can_create_documents=True if data.get('role') == 'ADMIN' else data.get('can_create_documents', False),
+            billing_limit=float(data.get('billing_limit', 0.0)),
+            billing_limit_type=data.get('billing_limit_type', 'DISABLED')
         )
         user.set_password(data.get('password', 'changeme123'))
         db.session.add(user)
@@ -644,6 +653,8 @@ def handle_single_user(id):
     sid = data.get('studio_id')
     user.assigned_studio_id = int(sid) if sid else None
     user.full_name = data.get('full_name', user.full_name)
+    if 'billing_limit' in data: user.billing_limit = float(data.get('billing_limit', 0.0))
+    if 'billing_limit_type' in data: user.billing_limit_type = data.get('billing_limit_type')
     
     user.is_active = data.get('is_active', user.is_active)
     
@@ -740,8 +751,9 @@ def toggle_module():
 @app.route('/api/dashboard', methods=['GET'])
 @require_role('ADMIN', 'PRODUCER')
 def get_dashboard():
-    limit_type = get_config_val('LIMIT_TYPE', 'DISABLED')
-    limit_val = float(get_config_val('LIMIT_VALUE', '0.0'))
+    # Prioritize user-specific limits
+    limit_type = current_user.billing_limit_type or get_config_val('LIMIT_TYPE', 'DISABLED')
+    limit_val = float(current_user.billing_limit if current_user.billing_limit and current_user.billing_limit > 0 else get_config_val('LIMIT_VALUE', '0.0'))
     
     if limit_type == 'DISABLED':
         return jsonify({
@@ -761,9 +773,11 @@ def get_dashboard():
     else: # MONTHLY
         start_date = datetime(today.year, today.month, 1)
     
+    # Filter by created_by_id to make it personal
     invoices_query = Invoice.query.filter(
         Invoice.date >= start_date,
-        Invoice.document_type.in_(['FAKTURA', 'PARAGON'])
+        Invoice.document_type.in_(['FAKTURA', 'PARAGON']),
+        Invoice.created_by_id == current_user.id
     )
     invoices_query = apply_studio_filter(invoices_query, Invoice)
     invoices_in_period = invoices_query.all()
@@ -773,8 +787,8 @@ def get_dashboard():
     return jsonify({
         "monthly_sum": total_in_period,
         "limit": limit_val,
-        "warning": total_in_period > (limit_val * 0.9),
-        "critical": total_in_period >= limit_val,
+        "warning": total_in_period > (limit_val * 0.9) if limit_val > 0 else False,
+        "critical": total_in_period >= limit_val if limit_val > 0 else False,
         "invoice_count": len(invoices_in_period),
         "limit_type": limit_type
     })
@@ -997,6 +1011,10 @@ def _prepare_pdf_data(invoice, user_context=None):
         "address": get_config_val('MY_ADDRESS', '')
     }
     
+    studio = None
+    if creator.assigned_studio_id:
+        studio = db.session.get(Studio, creator.assigned_studio_id)
+    
     items_for_pdf = [{
         "name": it.product_name,
         "price": it.unit_price,
@@ -1033,6 +1051,7 @@ def _prepare_pdf_data(invoice, user_context=None):
             "pesel": creator.pesel,
             "id_type": creator.id_type,
             "address": creator.address or "",
+            "city": creator.city or (studio.city if studio else get_config_val('MY_CITY', '')),
             "bank_account": creator.bank_account or get_config_val('MY_ACCOUNT', '') 
         },
         "metadata": metadata
