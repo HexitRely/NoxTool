@@ -168,6 +168,9 @@ with app.app_context():
     add_column_if_not_exists('invoice', 'include_rights_clause', 'BOOLEAN DEFAULT TRUE')
     add_column_if_not_exists('invoice', 'include_qr_code', 'BOOLEAN DEFAULT TRUE')
     add_column_if_not_exists('invoice', 'metadata_json', 'TEXT')
+    add_column_if_not_exists('invoice', 'legal_basis', 'TEXT')
+    add_column_if_not_exists('invoice_item', 'vat_rate', "VARCHAR(10) DEFAULT '23'")
+    add_column_if_not_exists('invoice_item', 'vat_value', 'FLOAT DEFAULT 0.0')
     # CRM & Project extensions
     add_column_if_not_exists('client', 'ltv', 'FLOAT DEFAULT 0.0')
     add_column_if_not_exists('client', 'social_media_links', 'TEXT')
@@ -1018,7 +1021,9 @@ def _prepare_pdf_data(invoice, user_context=None):
     items_for_pdf = [{
         "name": it.product_name,
         "price": it.unit_price,
-        "quantity": it.quantity
+        "quantity": it.quantity,
+        "vat_rate": it.vat_rate,
+        "vat_value": it.vat_value
     } for it in invoice.items]
 
     import json
@@ -1054,6 +1059,7 @@ def _prepare_pdf_data(invoice, user_context=None):
             "city": creator.city or (studio.city if studio else get_config_val('MY_CITY', '')),
             "bank_account": creator.bank_account or get_config_val('MY_ACCOUNT', '') 
         },
+        "legal_basis": invoice.legal_basis,
         "metadata": metadata
     }
     return invoice_pdf_data, my_data
@@ -1143,7 +1149,8 @@ def handle_invoices_post():
         created_by_id=current_user.id,
         is_worker_invoice=data.get('is_worker_invoice', False),
         metadata_json=json.dumps(meta),
-        studio_id=get_studio_id_for_create()
+        studio_id=get_studio_id_for_create(),
+        legal_basis=data.get('legal_basis')
     )
 
     db.session.add(new_invoice)
@@ -1154,11 +1161,23 @@ def handle_invoices_post():
     for item in data['items']:
         val = float(item['price']) * int(item['quantity'])
         total += val
+        rate = item.get('vat_rate', '23')
+        price = float(item['price'])
+        qty = int(item['quantity'])
+        
+        # Calculate VAT Value
+        vat_v = 0.0
+        if rate not in ['zw', 'np']:
+            rate_val = float(rate) / 100.0
+            vat_v = price * qty * rate_val
+            
         db.session.add(InvoiceItem(
             invoice_id=new_invoice.id,
             product_name=item['name'],
-            unit_price=float(item['price']),
-            quantity=int(item['quantity'])
+            unit_price=price,
+            quantity=qty,
+            vat_rate=rate,
+            vat_value=vat_v
         ))
         
     new_invoice.total_amount = total

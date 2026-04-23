@@ -189,6 +189,7 @@ class Invoice(db.Model):
     # Studio isolation
     studio_id = db.Column(db.Integer, db.ForeignKey('studio.id'), nullable=True)
     metadata_json = db.Column(db.Text, nullable=True)
+    legal_basis = db.Column(db.Text, nullable=True)
 
 
     client = db.relationship('Client', backref=db.backref('invoices', lazy=True, cascade='all, delete-orphan'))
@@ -203,6 +204,8 @@ class InvoiceItem(db.Model):
     product_name = db.Column(db.String(100))
     unit_price = db.Column(db.Float)
     quantity = db.Column(db.Integer)
+    vat_rate = db.Column(db.String(10), default='23')
+    vat_value = db.Column(db.Float, default=0.0)
 
     invoice = db.relationship('Invoice', backref=db.backref('items', lazy=True, cascade='all, delete-orphan'))
 

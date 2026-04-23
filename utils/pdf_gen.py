@@ -168,9 +168,11 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
     c.drawString(30*mm, table_header_y, "Nazwa usługi")
     
     if doc_type != 'WZ':
+        c.drawString(95*mm, table_header_y, "Ilość")
         c.drawString(110*mm, table_header_y, "Cena jedn.")
-        c.drawString(140*mm, table_header_y, "Ilość")
-        c.drawString(165*mm, table_header_y, "Wartość")
+        c.drawString(140*mm, table_header_y, "Stawka")
+        c.drawString(155*mm, table_header_y, "Kwota VAT")
+        c.drawString(178*mm, table_header_y, "Suma")
     else:
         c.drawString(165*mm, table_header_y, "Ilość")
         
@@ -182,9 +184,16 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
         c.drawString(30*mm, y, item['name'])
         
         if doc_type != 'WZ':
-            c.drawString(110*mm, y, f"{item['price']:.2f} PLN")
-            c.drawString(140*mm, y, str(item['quantity']))
-            c.drawString(165*mm, y, f"{(item['price'] * item['quantity']):.2f} PLN")
+            c.drawString(95*mm, y, str(item['quantity']))
+            c.drawString(110*mm, y, f"{item['price']:.2f}")
+            
+            rate_disp = f"{item['vat_rate']}%" if item['vat_rate'] not in ['zw', 'np'] else item['vat_rate']
+            c.drawString(140*mm, y, rate_disp)
+            
+            vat_val = item.get('vat_value', 0.0)
+            c.drawString(155*mm, y, f"{vat_val:.2f}")
+            
+            c.drawString(178*mm, y, f"{(item['price'] * item['quantity']):.2f}")
         else:
             c.drawString(165*mm, y, str(item['quantity']))
         y -= 7*mm
@@ -228,14 +237,20 @@ def create_invoice_pdf(filepath, invoice_data, my_data):
         c.drawRightString(158*mm, qr_y + 14*mm, "aby dokonać szybkiego przelewu")
     
     # Legal Clause
+    y_clause = 10*mm
+    if invoice_data.get('legal_basis'):
+        c.setFont(FONT_NAME, 8)
+        c.drawString(20*mm, 15*mm, f"Podstawa prawna zwolnienia z VAT: {invoice_data['legal_basis']}")
+        y_clause = 10*mm
+
     if invoice_data.get('include_rights_clause', True) and doc_type != 'WZ':
         c.setFont(FONT_NAME, 8)
         clause = f"Przeniesienie autorskich praw majątkowych następuje z chwilą pełnej zapłaty wynagrodzenia."
-        c.drawString(20*mm, 10*mm, clause)
+        c.drawString(20*mm, y_clause, clause)
     elif doc_type == 'WZ':
         c.setFont(FONT_NAME, 8)
         clause = "Dokument WZ potwierdza wydanie towaru/usługi. Nie stanowi podstawy płatności."
-        c.drawString(20*mm, 10*mm, clause)
+        c.drawString(20*mm, y_clause, clause)
     
     # Centered branding footer
     c.setFont(FONT_NAME, 8)

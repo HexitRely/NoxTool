@@ -538,14 +538,30 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderPOSItems() {
         const list = document.getElementById('pos-items-list');
         list.innerHTML = selectedItems.map((item, idx) => `
-            <div class="item-row" style="grid-template-columns: 1fr 60px 40px; margin-bottom: 5px; background: rgba(255,255,255,0.05); padding: 5px; border-radius: 5px; display: grid;">
-                <div style="font-size: 0.8rem;">${item.name} <small>(${item.price.toFixed(2)})</small></div>
+            <div class="item-row" style="grid-template-columns: 1fr 60px 40px 40px; margin-bottom: 5px; background: rgba(255,255,255,0.05); padding: 5px; border-radius: 5px; display: grid; align-items: center;">
+                <div style="font-size: 0.8rem;">${item.name} <br><small>${item.price.toFixed(2)} PLN | VAT: ${item.vat_rate}%</small></div>
                 <div style="font-weight: 700; font-size: 0.8rem; text-align: center;">x ${item.quantity}</div>
-                <button type="button" class="btn btn-danger btn-sm" onclick="window.app.removePOSItem(${idx})">×</button>
+                <div style="font-size: 0.7rem; color: var(--text-secondary); text-align: center;">${(item.price * item.quantity).toFixed(2)}</div>
+                <button type="button" class="btn btn-danger btn-sm" onclick="window.app.removePOSItem(${idx})" style="padding: 2px 5px;">×</button>
             </div>
         `).join('');
         const total = selectedItems.reduce((acc, it) => acc + (it.price * it.quantity), 0);
         document.getElementById('pos-total').textContent = total.toFixed(2);
+        
+        // Show/Hide Legal Basis Section
+        const hasExempt = selectedItems.some(it => it.vat_rate === 'zw');
+        const legalSection = document.getElementById('pos-legal-basis-section');
+        if (legalSection) {
+            legalSection.style.display = hasExempt ? 'block' : 'none';
+            
+            // Default logic for NDG (Limit)
+            if (hasExempt && !document.querySelector('input[name="legal_basis_option"]:checked')) {
+                const isNdg = currentUser && currentUser.billing_limit_type !== 'DISABLED';
+                if (isNdg) {
+                    document.getElementById('lb-option-limit').checked = true;
+                }
+            }
+        }
     }
 
     // NIP Lookup / GUS
@@ -589,6 +605,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // POS Generate
     const btnGenerate = document.getElementById('btn-pos-generate');
+
+    // Handle legal basis custom field toggle
+    document.querySelectorAll('input[name="legal_basis_option"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            const customInput = document.getElementById('pos-legal-basis-custom');
+            if (customInput) {
+                customInput.style.display = e.target.value === 'CUSTOM' ? 'block' : 'none';
+            }
+        });
+    });
+
     if (btnGenerate) {
         btnGenerate.onclick = async () => {
             if (selectedItems.length === 0) return alert('Koszyk jest pusty! Dodaj przynajmniej jeden produkt.');
@@ -614,7 +641,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     id_type: window.app.currentPosIdType || 'NIP',
                     address: document.getElementById('pos-client-address').value
                 },
-                is_worker_invoice: document.getElementById('pos-worker-invoice')?.value === 'true'
+                is_worker_invoice: document.getElementById('pos-worker-invoice')?.value === 'true',
+                legal_basis: (() => {
+                    const hasExempt = selectedItems.some(it => it.vat_rate === 'zw');
+                    if (!hasExempt) return null;
+                    const opt = document.querySelector('input[name="legal_basis_option"]:checked')?.value;
+                    if (opt === 'LIMIT') return "Zwolnienie na podstawie art. 113 ust. 1 i 9 ustawy o VAT";
+                    if (opt === 'CULTURAL') return "Zwolnienie na podstawie art. 43 ust. 1 pkt 33 lit. b ustawy o VAT (usługi twórców i artystów wykonawców)";
+                    if (opt === 'CUSTOM') return document.getElementById('pos-legal-basis-custom').value;
+                    return null;
+                })()
+            }
+
+            if (selectedItems.some(it => it.vat_rate === 'zw') && !payload.legal_basis) {
+                return alert("Dla stawki 'zw.' wymagane jest wybranie lub wpisanie podstawy prawnej zwolnienia!");
             }
 
             if (!payload.new_client_data.name && currentType !== 'PARAGON') {
@@ -1060,13 +1100,15 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('tile-add-name').textContent = p.name;
             document.getElementById('tile-add-price').value = p.price;
             document.getElementById('tile-add-qty').value = 1;
+            document.getElementById('tile-add-vat').value = "23"; // Reset to default
             document.getElementById('modal-tile-add').style.display = 'block';
             
             document.getElementById('btn-tile-confirm').onclick = () => {
                 selectedItems.push({
                     name: p.name,
                     price: parseFloat(document.getElementById('tile-add-price').value),
-                    quantity: parseInt(document.getElementById('tile-add-qty').value)
+                    quantity: parseInt(document.getElementById('tile-add-qty').value),
+                    vat_rate: document.getElementById('tile-add-vat').value
                 });
                 renderPOSItems();
                 document.getElementById('modal-tile-add').style.display = 'none';
